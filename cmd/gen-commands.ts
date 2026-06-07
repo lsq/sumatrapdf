@@ -227,6 +227,7 @@ export const commands = [
     "CmdSetScreenshotHotkey", "Set Screenshot Hotkey",
     "CmdToggleReuseInstance", "Toggle Reuse Instance",
     "CmdToggleChmUI", "Toggle CHM UI",
+    "CmdSendToRemote", "Send To Remote",
     "CmdNone", "Do nothing",
 ];
 

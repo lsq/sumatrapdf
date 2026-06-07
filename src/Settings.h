@@ -590,6 +590,7 @@ struct GlobalPrefs {
     float defaultZoomFloat;
     // position of the document properties window
     Point propWinPos;
+    char* remoteIp;
 };
 // for parsing themes
 struct Themes {
@@ -957,6 +958,7 @@ static const FieldInfo gGlobalPrefsFields[] = {
     {offsetof(GlobalPrefs, timeOfLastUpdateCheck), SettingType::Compact, (intptr_t)&gFILETIMEInfo},
     {offsetof(GlobalPrefs, openCountWeek), SettingType::Int, 0},
     {offsetof(GlobalPrefs, propWinPos), SettingType::Compact, (intptr_t)&gPointInfo},
+    {offsetof(GlobalPrefs, remoteIp), SettingType::String, 0},
     {(size_t)-1, SettingType::Comment, 0},
     {(size_t)-1, SettingType::Comment, (intptr_t)"Settings below are not recognized by the current version"},
 };

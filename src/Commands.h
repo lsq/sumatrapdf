@@ -232,7 +232,8 @@ enum {
     CmdSetScreenshotHotkey = 421,
     CmdToggleReuseInstance = 422,
     CmdToggleChmUI = 423,
-    CmdNone = 424,
+    CmdSendToRemote = 424,
+    CmdNone = 425,
 
     /* range for file history */
     CmdFileHistoryFirst,

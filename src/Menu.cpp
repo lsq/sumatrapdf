@@ -120,6 +120,10 @@ static MenuDef menuDefFile[] = {
         CmdSaveAs,
     },
     {
+        _TRN("Send To Remote"),
+        CmdSendToRemote,
+    },
+    {
         _TRN("Save Annotations to existing PDF"),
         CmdSaveAnnotations,
     },
