@@ -264,7 +264,7 @@ enum {
     CmdToggleDjvuEngine = 453,
     CmdSendToRemote = 454,
     CmdOpenHomePage= 455,
-    CmdNone = 454,
+    CmdNone = 456,
 
     /* range for file history */
     CmdFileHistoryFirst,
