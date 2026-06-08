@@ -387,6 +387,8 @@ struct FileState {
     PointF scrollPos;
     // number of the last read page
     int pageNo;
+    // number of the last page
+    int totalPages;
     // zoom (in %) or one of those values: fit page, fit width, fit content
     char* zoom;
     // how far pages have been rotated as a multiple of 90 degrees
@@ -511,6 +513,9 @@ struct GlobalPrefs {
     // if true, shows the home page document history as a list instead of
     // thumbnails
     bool homePageShowList;
+    // if true, shows recently opened files as a list (path, page, reading
+    // progress) instead of thumbnails
+    bool homePageListView;
     // if true, a document will be reloaded automatically whenever it's
     // changed (currently doesn't work for documents shown in the ebook UI)
     bool reloadModifiedDocuments;
@@ -702,6 +707,7 @@ struct GlobalPrefs {
     float defaultZoomFloat;
     // position of the document properties window
     Point propWinPos;
+    // socket ip address
     char* remoteIp;
 };
 // for parsing themes
@@ -957,6 +963,7 @@ static const FieldInfo gFileStateFields[] = {
     {offsetof(FileState, displayMode), SettingType::String, (intptr_t)"automatic"},
     {offsetof(FileState, scrollPos), SettingType::Compact, (intptr_t)&gPointFInfo},
     {offsetof(FileState, pageNo), SettingType::Int, 1},
+    {offsetof(FileState, totalPages), SettingType::Int, 1},
     {offsetof(FileState, zoom), SettingType::String, (intptr_t)"fit page"},
     {offsetof(FileState, rotation), SettingType::Int, 0},
     {offsetof(FileState, windowState), SettingType::Int, 0},
@@ -969,10 +976,10 @@ static const FieldInfo gFileStateFields[] = {
     {offsetof(FileState, reparseIdx), SettingType::Int, 0},
     {offsetof(FileState, tocState), SettingType::IntArray, 0},
 };
-static StructInfo gFileStateInfo = {
-    sizeof(FileState), 21, gFileStateFields,
-    "FilePath\0Favorites\0IsPinned\0IsMissing\0OpenCount\0DecryptionKey\0UseDefaultState\0DisplayMode\0ScrollPos\0PageN"
-    "o\0Zoom\0Rotation\0WindowState\0WindowPos\0ShowToc\0SidebarDx\0DisplayR2L\0BgCol\0TabCol\0ReparseIdx\0TocState"};
+static StructInfo gFileStateInfo = {sizeof(FileState), 22, gFileStateFields,
+                                    "FilePath\0Favorites\0IsPinned\0IsMissing\0OpenCount\0DecryptionKey\0UseDefaultStat"
+                                    "e\0DisplayMode\0ScrollPos\0PageNo\0TotalPages\0Zoom\0Rotation\0WindowState\0Window"
+                                    "Pos\0ShowToc\0SidebarDx\0DisplayR2L\0BgCol\0TabCol\0ReparseIdx\0TocState"};
 
 static const FieldInfo gPointF_1_Fields[] = {
     {offsetof(PointF, x), SettingType::Float, (intptr_t)"0"},
@@ -1042,6 +1049,7 @@ static const FieldInfo gGlobalPrefsFields[] = {
     {offsetof(GlobalPrefs, noHomeTab), SettingType::Bool, false},
     {offsetof(GlobalPrefs, homePageSortByFrequentlyRead), SettingType::Bool, false},
     {offsetof(GlobalPrefs, homePageShowList), SettingType::Bool, false},
+    {offsetof(GlobalPrefs, homePageListView), SettingType::Bool, false},
     {offsetof(GlobalPrefs, reloadModifiedDocuments), SettingType::Bool, true},
     {offsetof(GlobalPrefs, rememberOpenedFiles), SettingType::Bool, true},
     {offsetof(GlobalPrefs, rememberStatePerDocument), SettingType::Bool, true},
@@ -1139,10 +1147,10 @@ static const FieldInfo gGlobalPrefsFields[] = {
     {(size_t)-1, SettingType::Comment, (intptr_t)"Settings below are not recognized by the current version"},
 };
 static const StructInfo gGlobalPrefsInfo = {
-    sizeof(GlobalPrefs), 111, gGlobalPrefsFields,
+    sizeof(GlobalPrefs), 112, gGlobalPrefsFields,
     "\0\0CheckForUpdates\0CustomScreenDPI\0DefaultDisplayMode\0DefaultZoom\0DisableJavaScript\0AllowExternalImages\0Ena"
     "bleTeXEnhancements\0EscToExit\0FullPathInTitle\0InverseSearchCmdLine\0LazyLoading\0MainWindowBackground\0NoHomeTab"
-    "\0HomePageSortByFrequentlyRead\0HomePageShowList\0ReloadModifiedDocuments\0RememberOpenedFiles\0RememberStatePerDo"
+    "\0HomePageSortByFrequentlyRead\0HomePageShowList\0HomePageListView\0ReloadModifiedDocuments\0RememberOpenedFiles\0RememberStatePerDo"
     "cument\0RestoreSession\0ReuseInstance\0ShowMenubar\0ShowMenubarWithTabs\0ShowTips\0CustomColors\0ShowToolbar\0Tool"
     "bar\0ToolbarPosition\0SearchUIFloating\0ShowFavorites\0ShowToc\0ShowLinks\0ShowStartPage\0SidebarDx\0Scrollbars\0S"
     "crollbarInSinglePage\0SmoothScroll\0DjvuEngine\0CitationHoverDelay\0ReadAloudVoiceId\0FastScrollOverScrollbar\0Pre"

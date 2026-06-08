@@ -1001,6 +1001,15 @@ struct ThumbnailLayout {
     StaticLink* sl = nullptr;
 };
 
+struct FileListRow {
+    Rect rcRow;      // 整行区域（用于点击）
+    Rect rcPath;     // 第一列：文件路径
+    Rect rcPage;     // 第二列：当前页数
+    Rect rcPercent;  // 第三列：阅读百分比
+    FileState* fs = nullptr;
+    StaticLink* sl = nullptr;
+};
+
 struct HomePageLayout {
     // args in
     HWND hwnd = nullptr;
@@ -1019,6 +1028,7 @@ struct HomePageLayout {
     VirtWndText* openDoc = nullptr;
     VirtWndText* hideShowFreqRead = nullptr;
     Vec<ThumbnailLayout> thumbnails; // info for each thumbnail
+    Vec<FileListRow> rows;
     int totalContentDy = 0;          // total height of all thumbnail rows
     int thumbsVisibleDy = 0;         // visible height for thumbnails area
     Rect rcThumbsArea;               // clip rect for thumbnails
@@ -1332,6 +1342,7 @@ void LayoutHomePage(HomePageLayout& l) {
 
     Point ptOff(thumbsStartX, thumbsTopY - scrollY);
 
+    if(!gGlobalPrefs->homePageListView) {
     if (showList) {
         int listX = thumbsStartX;
         if (isRtl) {
@@ -1428,6 +1439,27 @@ void LayoutHomePage(HomePageLayout& l) {
         }
     }
 
+    } else {
+
+    int rowH = DpiScale(hdc, 22);
+    int rowY = thumbsTopY - scrollY;
+    int col1X = thumbsStartX;
+    int col2X = col1X + DpiScale(hdc, 800);  // 路径列宽度
+    int col3X = col2X + DpiScale(hdc, 80);   // 页数列宽度
+
+    for (FileState* fs : fileStates) {
+        FileListRow& row = *l.rows.AppendBlanks(1);
+        row.fs = fs;
+        row.rcPath    = {col1X, rowY, col2X - col1X - 4, rowH};
+        row.rcPage    = {col2X, rowY, col3X - col2X - 4, rowH};
+        row.rcPercent = {col3X, rowY, DpiScale(hdc, 80), rowH};
+        row.rcRow     = {col1X, rowY, rc.dx - col1X, rowH};
+        // StaticLink 绑定文件路径
+        row.sl = new StaticLink(row.rcRow, fs->filePath, fs->filePath);
+        win->staticLinks.Append(row.sl);
+        rowY += rowH + DpiScale(hdc, 2);
+    }
+    }
     // layout tip at the bottom
     if (tip) {
         Rect rcClient = ClientRect(win->hwndCanvas);
@@ -1798,6 +1830,7 @@ static void DrawHomePageLayout(HomePageLayout& l) {
         DeleteObject(thumbsClip);
     }
 
+    if(!gGlobalPrefs->homePageListView) {
     for (const ThumbnailLayout& thumb : l.thumbnails) {
         FileState* fs = thumb.fs;
         if (gGlobalPrefs->homePageShowList) {
@@ -1834,6 +1867,21 @@ static void DrawHomePageLayout(HomePageLayout& l) {
         GetFileStateIcon(fs);
         int x = isRtl ? page.x + page.dx - DpiScale(hdc, 16) : page.x;
         ImageList_Draw(fs->himl, fs->iconIdx, hdc, x, rect.y, ILD_TRANSPARENT);
+    }
+    } else {
+    UINT rfmt = DT_SINGLELINE | DT_END_ELLIPSIS | DT_VCENTER | DT_NOPREFIX;
+    for (const FileListRow& row : l.rows) {
+        FileState* fs = row.fs;
+        // 第一列：完整文件路径（带省略号）
+        HdcDrawText(hdc, fs->filePath, row.rcPath, rfmt | DT_LEFT, fontText);
+        // 第二列：当前页 / 总页数
+        TempStr pageStr = str::FormatTemp("%d / %d", fs->pageNo, fs->totalPages);
+        HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
+        // 第三列：阅读百分比
+        int pct = (fs->totalPages > 0) ? (fs->pageNo * 100 / fs->totalPages) : 0;
+        TempStr pctStr = str::FormatTemp("%d%%", pct);
+        HdcDrawText(hdc, pctStr, row.rcPercent, rfmt | DT_RIGHT, fontText);
+    }
     }
 
     // restore full clip region

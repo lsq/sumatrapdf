@@ -86,6 +86,9 @@ HomePageSortByFrequentlyRead = false
 
 ; if true, shows the home page document history as a list instead of thumbnails
 HomePageShowList = false
+; if true, shows recently opened files as a list (path, page, reading progress)
+; instead of thumbnails
+HomePageListView = false
 
 ; if true, a document will be reloaded automatically whenever it's changed
 ; (currently doesn't work for documents shown in the ebook UI) (introduced in
@@ -661,6 +664,9 @@ FileStates [
     ; number of the last read page
     PageNo = 1
 
+    ; number of the last page
+    TotalPages = 1
+
     ; zoom (in %) or one of those values: fit page, fit width, fit content
     Zoom = fit page
 
@@ -761,6 +767,9 @@ OpenCountWeek = 0
 
 ; position of the document properties window
 PropWinPos = 0 0
+
+; socket ip address
+RemoteIp =
 ```
 
 ## Syntax for color values
