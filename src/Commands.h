@@ -233,7 +233,7 @@ enum {
     CmdToggleReuseInstance = 422,
     CmdToggleChmUI = 423,
     CmdSendToRemote = 424,
-    CmdOpenHomePage= 425,
+    CmdOpenHomePage = 425,
     CmdNone = 426,
 
     /* range for file history */

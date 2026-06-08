@@ -504,6 +504,7 @@ const fileSettings: Field[] = [
     "PointF",
   ),
   mkField("PageNo", Int, 1, "number of the last read page"),
+  mkField("TotalPages", Int, 1, "number of the last page"),
   mkField("Zoom", Str, "fit page", "zoom (in %) or one of those values: fit page, fit width, fit content"),
   mkField("Rotation", Int, 0, "how far pages have been rotated as a multiple of 90 degrees"),
   mkField(
@@ -672,6 +673,12 @@ const globalPrefs: Field[] = [
     Bool,
     false,
     "if true implements pre-3.6 behavior of showing opened files by frequently used count. If false, shows most recently opened first",
+  ),
+  mkField(
+    "HomePageListView",
+    Bool,
+    false,
+    "if true, shows recently opened files as a list (path, page, reading progress) instead of thumbnails",
   ),
   setVersion(
     setExpert(
@@ -948,6 +955,10 @@ const globalPrefs: Field[] = [
   ),
   notSaved(mkField("DefaultZoomFloat", Float, -1, "value of DefaultZoom for internal usage")),
   setStructName(mkCompactStruct("PropWinPos", pointPos, "position of the document properties window"), "Point"),
+  setDoc(
+    mkField("RemoteIp", Str, null, "socket ip address"),
+    "socket ip address",
+  ),
   mkEmptyLine(),
   mkComment("Settings below are not recognized by the current version"),
 ];

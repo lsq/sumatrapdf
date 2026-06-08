@@ -324,6 +324,8 @@ struct FileState {
     PointF scrollPos;
     // number of the last read page
     int pageNo;
+    // number of the last page
+    int totalPages;
     // zoom (in %) or one of those values: fit page, fit width, fit content
     char* zoom;
     // how far pages have been rotated as a multiple of 90 degrees
@@ -438,6 +440,9 @@ struct GlobalPrefs {
     // if true implements pre-3.6 behavior of showing opened files by
     // frequently used count. If false, shows most recently opened first
     bool homePageSortByFrequentlyRead;
+    // if true, shows recently opened files as a list (path, page, reading
+    // progress) instead of thumbnails
+    bool homePageListView;
     // if true, a document will be reloaded automatically whenever it's
     // changed (currently doesn't work for documents shown in the ebook UI)
     bool reloadModifiedDocuments;
@@ -590,6 +595,7 @@ struct GlobalPrefs {
     float defaultZoomFloat;
     // position of the document properties window
     Point propWinPos;
+    // socket ip address
     char* remoteIp;
 };
 // for parsing themes
@@ -802,6 +808,7 @@ static const FieldInfo gFileStateFields[] = {
     {offsetof(FileState, displayMode), SettingType::String, (intptr_t)"automatic"},
     {offsetof(FileState, scrollPos), SettingType::Compact, (intptr_t)&gPointFInfo},
     {offsetof(FileState, pageNo), SettingType::Int, 1},
+    {offsetof(FileState, totalPages), SettingType::Int, 1},
     {offsetof(FileState, zoom), SettingType::String, (intptr_t)"fit page"},
     {offsetof(FileState, rotation), SettingType::Int, 0},
     {offsetof(FileState, windowState), SettingType::Int, 0},
@@ -814,10 +821,10 @@ static const FieldInfo gFileStateFields[] = {
     {offsetof(FileState, reparseIdx), SettingType::Int, 0},
     {offsetof(FileState, tocState), SettingType::IntArray, 0},
 };
-static StructInfo gFileStateInfo = {
-    sizeof(FileState), 21, gFileStateFields,
-    "FilePath\0Favorites\0IsPinned\0IsMissing\0OpenCount\0DecryptionKey\0UseDefaultState\0DisplayMode\0ScrollPos\0PageN"
-    "o\0Zoom\0Rotation\0WindowState\0WindowPos\0ShowToc\0SidebarDx\0DisplayR2L\0BgCol\0TabCol\0ReparseIdx\0TocState"};
+static StructInfo gFileStateInfo = {sizeof(FileState), 22, gFileStateFields,
+                                    "FilePath\0Favorites\0IsPinned\0IsMissing\0OpenCount\0DecryptionKey\0UseDefaultStat"
+                                    "e\0DisplayMode\0ScrollPos\0PageNo\0TotalPages\0Zoom\0Rotation\0WindowState\0Window"
+                                    "Pos\0ShowToc\0SidebarDx\0DisplayR2L\0BgCol\0TabCol\0ReparseIdx\0TocState"};
 
 static const FieldInfo gPointF_1_Fields[] = {
     {offsetof(PointF, x), SettingType::Float, (intptr_t)"0"},
@@ -884,6 +891,7 @@ static const FieldInfo gGlobalPrefsFields[] = {
     {offsetof(GlobalPrefs, mainWindowBackground), SettingType::Color, (intptr_t)"#80fff200"},
     {offsetof(GlobalPrefs, noHomeTab), SettingType::Bool, false},
     {offsetof(GlobalPrefs, homePageSortByFrequentlyRead), SettingType::Bool, false},
+    {offsetof(GlobalPrefs, homePageListView), SettingType::Bool, false},
     {offsetof(GlobalPrefs, reloadModifiedDocuments), SettingType::Bool, true},
     {offsetof(GlobalPrefs, rememberOpenedFiles), SettingType::Bool, true},
     {offsetof(GlobalPrefs, rememberStatePerDocument), SettingType::Bool, true},
@@ -963,17 +971,17 @@ static const FieldInfo gGlobalPrefsFields[] = {
     {(size_t)-1, SettingType::Comment, (intptr_t)"Settings below are not recognized by the current version"},
 };
 static const StructInfo gGlobalPrefsInfo = {
-    sizeof(GlobalPrefs), 90, gGlobalPrefsFields,
+    sizeof(GlobalPrefs), 92, gGlobalPrefsFields,
     "\0\0CheckForUpdates\0CustomScreenDPI\0DefaultDisplayMode\0DefaultZoom\0EnableTeXEnhancements\0EscToExit\0FullPathI"
-    "nTitle\0InverseSearchCmdLine\0LazyLoading\0MainWindowBackground\0NoHomeTab\0HomePageSortByFrequentlyRead\0ReloadMo"
-    "difiedDocuments\0RememberOpenedFiles\0RememberStatePerDocument\0RestoreSession\0ReuseInstance\0ShowMenubar\0ShowMe"
-    "nubarWithTabs\0ShowTips\0CustomColors\0ShowToolbar\0ShowFavorites\0ShowToc\0ShowLinks\0ShowStartPage\0SidebarDx\0S"
-    "crollbars\0ScrollbarInSinglePage\0SmoothScroll\0FastScrollOverScrollbar\0PreventSleepInFullscreen\0TabWidth\0Theme"
-    "\0TocDy\0ToolbarSize\0TreeFontName\0TreeFontSize\0UIFontSize\0DisableAntiAlias\0UseSysColors\0UseTabs\0TabsMru\0Zo"
-    "omLevels\0ZoomIncrement\0\0FixedPageUI\0\0EBookUI\0\0ComicBookUI\0\0ImageUI\0\0ChmUI\0\0Annotations\0\0ExternalVie"
-    "wers\0\0ForwardSearch\0\0PrinterDefaults\0\0Fullscreen\0\0SelectionHandlers\0\0Shortcuts\0\0Themes\0\0TabGroups\0"
-    "\0\0DefaultPasswords\0UiLanguage\0VersionToSkip\0WindowState\0WindowPos\0FileStates\0SessionData\0ReopenOnce\0Time"
-    "OfLastUpdateCheck\0OpenCountWeek\0PropWinPos\0\0"};
+    "nTitle\0InverseSearchCmdLine\0LazyLoading\0MainWindowBackground\0NoHomeTab\0HomePageSortByFrequentlyRead\0HomePage"
+    "ListView\0ReloadModifiedDocuments\0RememberOpenedFiles\0RememberStatePerDocument\0RestoreSession\0ReuseInstance\0S"
+    "howMenubar\0ShowMenubarWithTabs\0ShowTips\0CustomColors\0ShowToolbar\0ShowFavorites\0ShowToc\0ShowLinks\0ShowStart"
+    "Page\0SidebarDx\0Scrollbars\0ScrollbarInSinglePage\0SmoothScroll\0FastScrollOverScrollbar\0PreventSleepInFullscree"
+    "n\0TabWidth\0Theme\0TocDy\0ToolbarSize\0TreeFontName\0TreeFontSize\0UIFontSize\0DisableAntiAlias\0UseSysColors\0Us"
+    "eTabs\0TabsMru\0ZoomLevels\0ZoomIncrement\0\0FixedPageUI\0\0EBookUI\0\0ComicBookUI\0\0ImageUI\0\0ChmUI\0\0Annotati"
+    "ons\0\0ExternalViewers\0\0ForwardSearch\0\0PrinterDefaults\0\0Fullscreen\0\0SelectionHandlers\0\0Shortcuts\0\0Them"
+    "es\0\0TabGroups\0\0\0DefaultPasswords\0UiLanguage\0VersionToSkip\0WindowState\0WindowPos\0FileStates\0SessionData"
+    "\0ReopenOnce\0TimeOfLastUpdateCheck\0OpenCountWeek\0PropWinPos\0RemoteIp\0\0"};
 static const FieldInfo gTheme_1_Fields[] = {
     {offsetof(Theme, name), SettingType::String, (intptr_t)""},
     {offsetof(Theme, textColor), SettingType::Color, (intptr_t)""},

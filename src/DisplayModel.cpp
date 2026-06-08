@@ -277,6 +277,7 @@ void DisplayModel::GetDisplayState(FileState* fs) {
 
     ScrollState ss = GetScrollState();
     fs->pageNo = ss.page;
+    fs->totalPages = engine->PageCount();
     fs->scrollPos = PointF();
     if (!inPresentation) {
         fs->scrollPos = PointF((float)ss.x, (float)ss.y);
