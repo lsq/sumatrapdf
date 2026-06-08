@@ -309,6 +309,7 @@ ACCEL gBuiltInAccelerators[] = {
     // TODO: don't know what VK_ is this
     {0, '.', CmdPresentationBlackBackground},
     {FVIRTKEY, 'C', CmdToggleContinuousView},
+    {FCONTROL | FSHIFT | FVIRTKEY, 'H', CmdOpenHomePage},
 };
 
 ACCEL* gAccels = nullptr;

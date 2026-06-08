@@ -228,6 +228,7 @@ export const commands = [
     "CmdToggleReuseInstance", "Toggle Reuse Instance",
     "CmdToggleChmUI", "Toggle CHM UI",
     "CmdSendToRemote", "Send To Remote",
+    "CmdOpenHomePage", "Open Home Page",
     "CmdNone", "Do nothing",
 ];
 

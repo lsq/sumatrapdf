@@ -238,6 +238,7 @@ static SeqStrings gCommandNames =
     "CmdToggleReuseInstance\0"
     "CmdToggleChmUI\0"
     "CmdSendToRemote\0"
+    "CmdOpenHomePage\0"
     "CmdNone\0"
     "\0";
 
@@ -466,6 +467,7 @@ static i32 gCommandIds[] = {
     CmdToggleReuseInstance,
     CmdToggleChmUI,
     CmdSendToRemote,
+    CmdOpenHomePage,
     CmdNone,
 };
 
@@ -694,6 +696,7 @@ SeqStrings gCommandDescriptions =
     "Toggle Reuse Instance\0"
     "Toggle CHM UI\0"
     "Send To Remote\0"
+    "Open Home Page\0"
     "Do nothing\0"
     "\0";
 // clang-format on

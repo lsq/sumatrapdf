@@ -151,6 +151,37 @@ bool gRedrawLog = false;
 static void RelayoutFrame(MainWindow* win, bool updateToolbars = true, int sidebarDx = -1);
 static void UpdateOverlayScrollbarPositions(MainWindow* win);
 
+static void OpenHomePage(MainWindow* win) {
+    // 1. 查找已有的 Home 标签页
+    int nTabs = win->TabCount();
+    for (int i = 0; i < nTabs; i++) {
+        WindowTab* tab = win->GetTab(i);
+        if (tab->IsAboutTab()) {
+            win->tabsCtrl->SetSelected(i);
+            LoadModelIntoTab(tab);
+            return;
+        }
+    }
+
+    // 2. 没有 Home 标签页，新建一个（镜像 AddTabToWindow 中的逻辑）
+    WindowTab* homeTab = new WindowTab(win);
+    homeTab->type = WindowTab::Type::About;
+    homeTab->canvasRc = win->canvasRc;
+
+    TabInfo* newTabInfo = new TabInfo();
+    newTabInfo->text    = str::Dup("Home");
+    newTabInfo->tooltip = nullptr;
+    newTabInfo->isPinned  = true;
+    newTabInfo->canClose  = true;
+    newTabInfo->userData  = (UINT_PTR)homeTab;
+
+    int insertedIdx = win->tabsCtrl->InsertTab(0, newTabInfo);
+    win->tabsCtrl->SetSelected(insertedIdx);
+    win->currentTabTemp = homeTab;
+    LoadModelIntoTab(homeTab);
+    UpdateTabWidth(win);
+}
+
 static const char* HwndName(HWND hwnd) {
     WCHAR cls[64]{};
     GetClassNameW(hwnd, cls, dimof(cls));
@@ -7548,6 +7579,12 @@ static LRESULT FrameOnCommand(MainWindow* win, HWND hwnd, UINT msg, WPARAM wp, L
             extern bool gDisableInteractiveInverseSearch;
             gDisableInteractiveInverseSearch = !gDisableInteractiveInverseSearch;
             break;
+
+        case CmdOpenHomePage:
+            OpenHomePage(win);
+            break;
+        // 如果没有 Home 标签页（noHomeTab=true 或被关闭），
+        // 可以新建一个 About 类型的 WindowTab 并插入
 
         default:
             return DefWindowProc(hwnd, msg, wp, lp);

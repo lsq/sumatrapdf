@@ -811,14 +811,16 @@ int TabsCtrl::TabCount() {
 // takes ownership of tab
 int TabsCtrl::InsertTab(int idx, TabInfo* tab) {
     ReportIf(idx < 0);
+    tabs.InsertAt(idx, tab);
     TCITEMW item{};
     item.mask = TCIF_TEXT;
     item.pszText = ToWStrTemp(tab->text);
     int res = TabCtrl_InsertItem(hwnd, idx, &item);
     if (res < 0) {
+        tabs.RemoveAt(idx); //回滚
         return res;
     }
-    tabs.InsertAt(idx, tab);
+    // tabs.InsertAt(idx, tab);
     // LayoutTabs() must be before SetSelected() because SetSelected()
     // triggers sync repaint which paints tab texts in wrong positions
     // because we didn't position them yet in layout.
