@@ -258,6 +258,7 @@ export const commands = [
     "CmdToggleToolbarPosition", "Toggle Toolbar Position",
     "CmdToggleDjvuEngine", "Toggle DjVu Engine",
     "CmdSendToRemote", "Send To Remote",
+    "CmdOpenHomePage", "Open Home Page",
     "CmdNone", "Do nothing",
 ];
 
