@@ -6,6 +6,7 @@
 #include "utils/FileUtil.h"
 #include "utils/ScopedWin.h"
 #include "utils/WinUtil.h"
+#include "utils/StrQueue.h"
 #include "utils/HttpUtil.h"
 
 #include "utils/Log.h"
@@ -270,3 +271,532 @@ Exit:
     }
     return ok;
 }
+
+// -----------------------------------------------------------------------
+// 有界并发字节块队列(信号量实现)
+// -----------------------------------------------------------------------
+struct BoundedByteQueueOld {
+    struct Chunk {
+        char* data = nullptr;
+        int   len  = 0;
+    };
+
+    CRITICAL_SECTION cs;
+    HANDLE hSemSlots;   // 信号量：可用槽位数（初始 = maxChunks）
+    HANDLE hEventData;  // 自动重置事件：队列非空时触发
+    Vec<Chunk> chunks;
+    bool finished = false;
+
+    explicit BoundedByteQueueOld(int maxChunks) {
+        InitializeCriticalSection(&cs);
+        hSemSlots  = CreateSemaphoreW(nullptr, maxChunks, maxChunks, nullptr);
+        hEventData = CreateEventW(nullptr, /*manualReset=*/FALSE, /*initial=*/FALSE, nullptr);
+    }
+
+    ~BoundedByteQueueOld() {
+        DeleteCriticalSection(&cs);
+        CloseHandle(hSemSlots);
+        CloseHandle(hEventData);
+    }
+
+    // 生产者：阻塞直到有空槽，然后入队（复制数据）
+    // 返回 false 表示队列已被标记结束，不应再 Push
+    bool Push(const char* src, int len) {
+        WaitForSingleObject(hSemSlots, INFINITE); // 等待空槽
+        EnterCriticalSection(&cs);
+        if (finished) {
+            LeaveCriticalSection(&cs);
+            ReleaseSemaphore(hSemSlots, 1, nullptr);
+            return false;
+        }
+        Chunk c;
+        c.data = (char*)malloc(len);
+        memcpy(c.data, src, len);
+        c.len = len;
+        chunks.Append(c);
+        LeaveCriticalSection(&cs);
+        SetEvent(hEventData); // 通知消费者
+        return true;
+    }
+
+    // 生产者：标记生产结束
+    void MarkFinished() {
+        EnterCriticalSection(&cs);
+        finished = true;
+        LeaveCriticalSection(&cs);
+        SetEvent(hEventData); // 唤醒可能阻塞的消费者
+    }
+
+    // 消费者：阻塞直到有数据或结束
+    // 返回 false 表示队列已空且已结束
+    bool Pop(Chunk& out) {
+    again:
+        EnterCriticalSection(&cs);
+        if (chunks.Size() > 0) {
+            out = chunks.PopAt(0);
+            LeaveCriticalSection(&cs);
+            ReleaseSemaphore(hSemSlots, 1, nullptr); // 释放一个槽位
+            return true;
+        }
+        bool done = finished;
+        LeaveCriticalSection(&cs);
+        if (done) {
+            return false;
+        }
+        WaitForSingleObject(hEventData, INFINITE);
+        goto again;
+    }
+};
+
+// ---- 有界字节块队列（生产者-消费者，用于单文件流式上传）----
+
+struct ByteChunk {
+    char* data = nullptr;
+    DWORD len  = 0;
+};
+
+struct BoundedByteQueue {
+    int maxChunks;
+    CRITICAL_SECTION cs;
+    HANDLE hNotEmpty;  // 消费者等待：队列非空（自动重置）
+    HANDLE hNotFull;   // 生产者等待：队列未满（信号量）
+    Vec<ByteChunk> chunks;
+    bool finished = false;
+
+    explicit BoundedByteQueue(int maxChunks) : maxChunks(maxChunks) {
+        InitializeCriticalSection(&cs);
+        hNotEmpty = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        hNotFull  = CreateSemaphoreW(nullptr, maxChunks, maxChunks, nullptr);
+    }
+    ~BoundedByteQueue() {
+        DeleteCriticalSection(&cs);
+        SafeCloseHandle(&hNotEmpty);
+        SafeCloseHandle(&hNotFull);
+        for (int i = 0; i < chunks.Size(); i++) {
+            free(chunks[i].data);
+        }
+    }
+    // 生产者：阻塞直到有空位
+    bool Push(const char* data, DWORD len) {
+        WaitForSingleObject(hNotFull, INFINITE);
+        EnterCriticalSection(&cs);
+        if (finished) {
+            LeaveCriticalSection(&cs);
+            ReleaseSemaphore(hNotFull, 1, nullptr);
+            return false;
+        }
+        ByteChunk c;
+        c.data = (char*)memdup(data, len);
+        c.len  = len;
+        chunks.Append(c);
+        LeaveCriticalSection(&cs);
+        SetEvent(hNotEmpty);
+        return true;
+    }
+
+    void MarkFinished() {
+        EnterCriticalSection(&cs);
+        finished = true;
+        LeaveCriticalSection(&cs);
+        // 加上这行日志
+        logf("debug: MarkFinished called. hNotEmpty handle = %p\n", hNotEmpty);
+        SetEvent(hNotEmpty);
+    }
+
+    // 消费者：阻塞直到有数据，返回 false 表示结束
+    bool Pop(ByteChunk& out) {
+    // again:
+    while (true) {
+        // WaitForSingleObject(hNotEmpty, INFINITE);
+        EnterCriticalSection(&cs);
+        if (chunks.Size() == 0) {
+            bool done = finished;
+            LeaveCriticalSection(&cs);
+            if (done) return false;
+            // goto again;
+        }
+
+        if (chunks.Size() > 0) {
+        out = chunks.PopAt(0);
+        // bool needRelease = (chunks.Size() < maxChunks);
+        LeaveCriticalSection(&cs);
+        // if (needRelease) 
+        ReleaseSemaphore(hNotFull, 1, nullptr);
+        return true;
+        }
+
+        if (finished) {
+            LeaveCriticalSection(&cs);
+            return false;
+        }
+
+        LeaveCriticalSection(&cs);
+        WaitForSingleObject(hNotEmpty, INFINITE);
+    }
+    }
+};
+
+// -----------------------------------------------------------------------
+// 生产者线程：读取文件，分块写入有界队列
+// -----------------------------------------------------------------------
+struct FileReaderData {
+    BoundedByteQueue* queue;
+    char*  filePath;
+    int    chunkSize;
+    bool*  errorOut;
+};
+
+static void FileReaderThread(FileReaderData* td) {
+    AutoDelete del(td);
+    WCHAR* pathW = ToWStrTemp(td->filePath);
+    HANDLE hFile = CreateFileW(pathW, GENERIC_READ, FILE_SHARE_READ,
+                               nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        logf("HttpPostFileStream reader: CreateFileW failed for '%s'\n", td->filePath);
+        *td->errorOut = true;
+        td->queue->MarkFinished();
+        free(td->filePath);
+        delete td;
+        DestroyTempAllocator();
+        return;
+    }
+
+    char* buf = AllocArray<char>(td->chunkSize);
+    // long tt = 0;
+    for (;;) {
+        DWORD dwRead = 0;
+        if (!ReadFile(hFile, buf, (DWORD)td->chunkSize, &dwRead, nullptr)) {
+            logf("HttpPostFileStream reader: ReadFile failed\n");
+            *td->errorOut = true;
+            break;
+        }
+        // tt += dwRead;
+        // logf("debug: file read length: %d\n, total read: %d\n", dwRead, tt);
+        if (dwRead == 0) {
+            break; // EOF
+        }
+        if (!td->queue->Push(buf, (int)dwRead)) {
+            break; // 队列已关闭
+        }
+    }
+
+    free(buf);
+    CloseHandle(hFile);
+    logf("debug: FileReaderThread exiting, calling MarkFinished...\n");
+    td->queue->MarkFinished();
+    free(td->filePath);
+    delete td;
+    DestroyTempAllocator();
+}
+
+// -----------------------------------------------------------------------
+// 主函数：流式 POST 文件
+// -----------------------------------------------------------------------
+bool HttpPostFileStream(const char* serverA, int port, const char* urlPathA,
+                        const char* filePath,
+                        int maxQueueChunks,
+                        int chunkSize,
+                        Func1<HttpUploadProgress*>& cbProgress) {
+    logf("HttpPostFileStream: server='%s' port=%d path='%s' file='%s'\n",
+         serverA, port, urlPathA, filePath);
+
+    bool ok = false;
+    HINTERNET hInet = nullptr, hConn = nullptr, hReq = nullptr;
+    DWORD respCode = 0, respCodeSize = sizeof(respCode);
+    DWORD timeoutMs = 60 * 1000;
+
+    // 获取文件大小（用于 Content-Length 和进度计算）
+    i64 fileSize = file::GetSize(filePath);
+    if (fileSize < 0) {
+        logf("HttpPostFileStream: file not found or empty\n");
+        return false;
+    }
+
+    // 创建有界并发队列，启动生产者线程
+    BoundedByteQueue queue(maxQueueChunks);
+    bool readerError = false;
+
+    auto td = new FileReaderData{&queue, str::Dup(filePath), chunkSize, &readerError};
+    auto fn = MkFunc0(FileReaderThread, td);
+    RunAsync(fn, "HttpPostFileStreamReader");
+
+    // 建立 HTTP 连接
+    WCHAR* server  = ToWStrTemp(serverA);
+    WCHAR* urlPath = ToWStrTemp(urlPathA);
+
+    hInet = InternetOpenW(kUserAgent, INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
+    if (!hInet) {
+        logf("HttpPostFileStream: InternetOpenW failed\n");
+        goto Exit;
+    }
+
+    hConn = InternetConnectW(hInet, server, (INTERNET_PORT)port,
+                             nullptr, nullptr, INTERNET_SERVICE_HTTP, 0, 1);
+    if (!hConn) {
+        logf("HttpPostFileStream: InternetConnectW failed\n");
+        goto Exit;
+    }
+
+    {
+        DWORD flags = INTERNET_FLAG_NO_UI | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_RELOAD;
+        if (port == 443) {
+            flags |= INTERNET_FLAG_SECURE;
+        }
+        hReq = HttpOpenRequestW(hConn, L"POST", urlPath, nullptr, nullptr, nullptr, flags, 0);
+    }
+    if (!hReq) {
+        logf("HttpPostFileStream: HttpOpenRequestW failed\n");
+        goto Exit;
+    }
+
+    InternetSetOptionW(hReq, INTERNET_OPTION_SEND_TIMEOUT,    &timeoutMs, sizeof(timeoutMs));
+    InternetSetOptionW(hReq, INTERNET_OPTION_RECEIVE_TIMEOUT, &timeoutMs, sizeof(timeoutMs));
+
+    // 添加 Content-Length 头
+    {
+        TempStr hdr = str::FormatTemp("Content-Length: %lld\r\nContent-Type: application/octet-stream\r\n\r\n",
+                                      (long long)fileSize);
+        WCHAR* hdrW = ToWStrTemp(hdr);
+        HttpAddRequestHeadersW(hReq, hdrW, (DWORD)-1, HTTP_ADDREQ_FLAG_ADD);
+    }
+
+    // 开始流式发送（不在此处传入 body，后续用 InternetWriteFile 写入）
+    {
+        INTERNET_BUFFERS bufIn{};
+        bufIn.dwStructSize  = sizeof(INTERNET_BUFFERS);
+        bufIn.dwBufferTotal = (DWORD)fileSize;
+        if (!HttpSendRequestExW(hReq, &bufIn, nullptr, 0, 0)) {
+            logf("HttpPostFileStream: HttpSendRequestExW failed\n");
+            LogLastError();
+            goto Exit;
+        }
+    }
+
+    // 消费队列，逐块写入 HTTP 请求体
+    {
+        HttpUploadProgress progress{};
+        progress.totalSize = fileSize;
+
+        ByteChunk chunk;
+        // int tt = 0;
+        for (;;) {
+            if (!queue.Pop(chunk)) {
+                break; // 队列结束
+            }
+            DWORD dwWritten = 0;
+            // logf("debug: chunk data length: %d\n", chunk.len);
+            BOOL writeOk = InternetWriteFile(hReq, chunk.data, (DWORD)chunk.len, &dwWritten);
+            free(chunk.data);
+            if (!writeOk) {
+                logf("HttpPostFileStream: InternetWriteFile failed\n");
+                LogLastError();
+                goto Exit;
+            }
+            // tt += dwWritten;
+            // logf("debug: send data length: %d\nTotal send: %d\n", dwWritten, tt);
+            progress.nUploaded += (i64)dwWritten;
+            cbProgress.Call(&progress);
+        }
+    }
+
+    if (readerError) {
+        logf("HttpPostFileStream: file reader thread reported error\n");
+        goto Exit;
+    }
+
+    // 结束请求，等待服务器响应
+    if (!HttpEndRequest(hReq, nullptr, 0, 0)) {
+        logf("HttpPostFileStream: HttpEndRequest failed\n");
+        LogLastError();
+        goto Exit;
+    }
+
+    HttpQueryInfoW(hReq, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
+                   &respCode, &respCodeSize, nullptr);
+    logf("HttpPostFileStream: response code %d\n", (int)respCode);
+    ok = (respCode >= 200 && respCode < 300);
+
+Exit:
+    if (hReq)  InternetCloseHandle(hReq);
+    if (hConn) InternetCloseHandle(hConn);
+    if (hInet) InternetCloseHandle(hInet);
+    return ok;
+}
+
+struct UploadWorkerCtx {
+    StrQueue*       queue;
+    const char*     serverA;
+    int             port;
+    const char*     urlA;
+    int             chunkSize;
+    UploadProgress* progress;
+};
+
+struct PerChunkCbArgs {
+    FileUploadState* fstate;   // 指向当前文件的上传状态
+    UploadProgress*  gProgress; // 指向全局上传进度状态
+};
+
+static void UploadWorkerThread(UploadWorkerCtx* ctx) {
+    for (;;) {
+        char* path = ctx->queue->PopFront();
+        if (!path) {
+            // Stop() 触发，立即退出
+            break;
+        }
+        if (ctx->queue->IsSentinel(path)) {
+        //     SetEvent(ctx->queue->hEvent); // 传递 sentinel 给下一个线程
+            break;
+        }
+
+        // 找到对应的 FileUploadState（按路径匹配）
+        FileUploadState* fstate = nullptr;
+        for (int i = 0; i < ctx->progress->fileStates.Size(); i++) {
+            if (str::Eq(ctx->progress->fileStates[i]->filePath, path)) {
+                fstate = ctx->progress->fileStates[i];
+                break;
+            }
+        }
+        if (!fstate) {
+            free(path);
+            continue;
+        }
+
+        fstate->isActive = true;
+
+        // 构造单文件进度回调：每上传一块，更新 fstate 和全局 uploadedBytes
+        PerChunkCbArgs cbArgs{fstate, ctx->progress};
+        auto perChunkCb = MkFunc1(+[](PerChunkCbArgs *args, HttpUploadProgress* p) {
+            FileUploadState* fs = args->fstate;
+            UploadProgress*  gp = args->gProgress;
+
+            // 本次新增字节数
+            i64 delta = p->nUploaded - fs->uploadedBytes.Load();
+            if (delta > 0) {
+                fs->uploadedBytes.Add(delta);
+                gp->uploadedBytes.Add(delta);
+                // 触发全局进度回调
+                gp->cbProgress.Call(gp);
+            }
+        }, &cbArgs);
+
+        bool ok = HttpPostFileStream(
+            ctx->serverA, ctx->port, ctx->urlA,
+            path, 4, ctx->chunkSize, perChunkCb);
+
+        fstate->isActive = false;
+        fstate->isDone   = true;
+        fstate->isFailed = !ok;
+
+        AtomicIntInc(&ctx->progress->nCompleted);
+        if (!ok) AtomicIntInc(&ctx->progress->nFailed);
+
+        // 完成后再触发一次回调，通知文件级状态变化
+        ctx->progress->cbProgress.Call(ctx->progress);
+
+        free(path);
+    }
+    DestroyTempAllocator();
+}
+
+int HttpPostFilesStreamPool(
+    const char* serverA, int port, const char* urlA,
+    const StrVec& filePaths,
+    int workerCount, int chunkSize,
+    Func1<UploadProgress*> cbProgress,
+    StrQueue* stopQueue)
+{
+    int n = filePaths.Size();
+    if (n == 0) {
+        return 0;
+    }
+    // 并发数不超过文件数
+    if (workerCount > n) {
+        workerCount = n;
+    }
+
+    StrQueue localQueue;
+    StrQueue* queue = stopQueue ? stopQueue : &localQueue;
+    UploadProgress* progress = new UploadProgress;
+    progress->nTotal     = n;
+    progress->totalBytes = 0;
+    progress->cbProgress = cbProgress;
+    // 预分配每个文件的状态，并统计总字节数
+    // progress.files.Reverse();
+    for (int i = 0; i < n; i++) {
+        // FileUploadState& fs = *progress.fileStates.AppendBlanks(1);
+        // FileUploadState* fs = progress->fileStates.AppendBlanks(1);
+        auto* fs = new FileUploadState();
+        fs->filePath     = filePaths.At(i);
+        fs->totalBytes   = file::GetSize(fs->filePath);
+        if (fs->totalBytes > 0) {
+            progress->totalBytes += fs->totalBytes;
+        }
+        progress->fileStates.Append(fs);
+    }
+
+    // ... 启动线程池、生产者写队列、等待完成（同前）...
+    // 启动固定数量的工作线程
+    UploadWorkerCtx ctx{};
+    ctx.queue     = queue;
+    ctx.serverA   = serverA;
+    ctx.port      = port;
+    ctx.urlA      = urlA;
+    ctx.chunkSize = chunkSize;
+    ctx.progress  = progress;
+
+    Vec<HANDLE> hThreads;
+    for (int i = 0; i < workerCount; i++) {
+        auto fn = MkFunc0(UploadWorkerThread, &ctx);
+        HANDLE h = StartThread(fn, "HttpUploadWorker");
+        if (h) {
+            hThreads.Append(h);
+        }
+    }
+
+    // 生产者：把所有文件路径写入队列
+    for (int i = 0; i < n; i++) {
+        if (queue->IsStopped()) {
+            break;
+        }
+        queue->Append(filePaths.At(i));
+    }
+    if (!queue->IsFinished()) {
+        queue->MarkFinished();
+    }
+
+    // 等待所有工作线程退出
+    for (int i = 0; i < hThreads.Size(); i++) {
+        HANDLE h = hThreads[i];
+        WaitForSingleObject(h, INFINITE);
+        SafeCloseHandle(&h);
+    }
+
+    return (int)progress->nFailed;
+}
+
+
+/* 调用
+HttpPostFilesStreamPool(server, 443, "/api/upload", files, 4, 64*1024,
+    MkFunc1([](const UploadProgress* p, void*) {
+        // 全局进度
+        logf("总进度: %d/%d 文件, %lld/%lld 字节\n",
+             p->nCompleted.Load(), p->nTotal,
+             p->uploadedBytes.Load(), p->totalBytes);
+
+        // 每个文件的进度
+        for (int i = 0; i < p->files.Size(); i++) {
+            const FileUploadState& fs = p->files[i];
+            if (!fs.isActive && !fs.isDone) continue;
+            int pct = (fs.totalBytes > 0)
+                ? (int)(fs.uploadedBytes.Load() * 100 / fs.totalBytes)
+                : -1;
+            logf("  [%s] %s %d%%\n",
+                 fs.isDone ? (fs.isFailed ? "FAIL" : "OK") : "...",
+                 path::GetBaseNameTemp(fs.filePath),
+                 pct);
+        }
+    }, nullptr),
+    queue);
+
+*/

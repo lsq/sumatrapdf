@@ -36,6 +36,7 @@
 #include "DarkModeSubclass.h"
 #include "utils/Log.h"
 #include "AppTools.h"
+#include "utils/HttpUtil.h"
 
 #ifndef ABOUT_USE_LESS_COLORS
 #define ABOUT_LINE_OUTER_SIZE 2
@@ -916,6 +917,9 @@ struct HomePageLayout {
     VirtWndText* hideShowFreqRead = nullptr;
     Vec<ThumbnailLayout> thumbnails; // info for each thumbnail
     Vec<FileListRow> rows;
+    // 上传进度区域（仅当 win->uploadProgress != nullptr 时有效）
+    Rect rcUploadPanel;
+    bool hasUpload = false;
     int totalContentDy = 0;          // total height of all thumbnail rows
     int thumbsVisibleDy = 0;         // visible height for thumbnails area
     Rect rcThumbsArea;               // clip rect for thumbnails
@@ -1209,6 +1213,17 @@ void LayoutHomePage(HomePageLayout& l) {
 
     Point ptOff(thumbsStartX, thumbsTopY - scrollY);
 
+    // 如果有上传任务，在底部预留进度面板
+    if (l.win && l.win->uploadProgress) {
+        UploadProgress* up = l.win->uploadProgress;
+        int panelH = DpiScale(hdc, 24) * (up->fileStates.Size() + 2); // 标题行 + 每文件一行 + 底部间距
+        l.rcUploadPanel = {rc.x + kThumbsMarginLeft,
+                           rc.y + rc.dy - panelH - DpiScale(hdc, 8),
+                           rc.dx - kThumbsMarginLeft - kThumbsMarginRight,
+                           panelH};
+        l.hasUpload = true;
+    }
+
     if(!gGlobalPrefs->homePageListView) {
 
     for (int row = 0; row < thumbsRows; row++) {
@@ -1497,6 +1512,78 @@ static void DrawHomePageLayout(HomePageLayout& l) {
                 // TempStr finishStr = (fs->pageNo == sz) ? str::DupTemp("✅ 完成") : str::DupTemp("⏳ 传输中");
                 // HdcDrawText(hdc, finishStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
             }
+        }
+    }
+
+    // 绘制上传进度面板
+    if (l.hasUpload && l.win->uploadProgress) {
+        UploadProgress* up = l.win->uploadProgress;
+        const Rect& rp = l.rcUploadPanel;
+        int rowH    = DpiScale(hdc, 22);
+        int colGap  = DpiScale(hdc, 8);
+        int col2Dx  = DpiScale(hdc, 100); // 进度条列
+        int col3Dx  = DpiScale(hdc, 60);  // 百分比列
+        int col1Dx  = rp.dx - col2Dx - col3Dx - 2 * colGap;
+        int col1X   = rp.x;
+        int col2X   = col1X + col1Dx + colGap;
+        int col3X   = col2X + col2Dx + colGap;
+
+        // 面板背景
+        COLORREF panelBg = ThemeControlBackgroundColor();
+        FillRect(hdc, rp, panelBg);
+
+        HFONT fontUp = CreateSimpleFont(hdc, "MS Shell Dlg", 12);
+        SelectObject(hdc, fontUp);
+        SetTextColor(hdc, ThemeWindowTextColor());
+        SetBkMode(hdc, TRANSPARENT);
+
+        // 标题行：总进度
+        int y = rp.y + DpiScale(hdc, 4);
+        TempStr title = str::FormatTemp("上传进度: %d / %d 文件  %lld / %lld 字节",
+            (int)up->nCompleted, up->nTotal,
+            up->uploadedBytes.Load(), up->totalBytes);
+        Rect rcTitle = {col1X, y, rp.dx, rowH};
+        HdcDrawText(hdc, title, rcTitle, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_LEFT, fontUp);
+        y += rowH + DpiScale(hdc, 2);
+
+        // 每个文件一行
+        for (int i = 0; i < up->fileStates.Size(); i++) {
+            FileUploadState* fs = up->fileStates[i];
+
+            // 第一列：文件名（带省略号）
+            TempStr fname = path::GetBaseNameTemp(fs->filePath);
+            Rect rcName = {col1X, y, col1Dx, rowH};
+            HdcDrawText(hdc, fname, rcName,
+                        DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX | DT_LEFT, fontUp);
+
+            // 第二列：进度条
+            Rect rcBar = {col2X, y + DpiScale(hdc, 4), col2Dx, rowH - DpiScale(hdc, 8)};
+            COLORREF barBg  = AccentColor(panelBg, 40);
+            COLORREF barFg  = ThemeWindowLinkColor();
+            FillRect(hdc, rcBar, barBg);
+            if (fs->totalBytes > 0) {
+                int fillW = (int)(rcBar.dx * fs->uploadedBytes.Load() / fs->totalBytes);
+                Rect rcFill = {rcBar.x, rcBar.y, fillW, rcBar.dy};
+                FillRect(hdc, rcFill, barFg);
+            }
+
+            // 第三列：百分比或状态
+            TempStr pctStr;
+            if (fs->isFailed) {
+                pctStr = str::DupTemp("失败");
+            } else if (fs->isDone) {
+                pctStr = str::DupTemp("完成");
+            } else if (fs->totalBytes > 0) {
+                int pct = (int)(fs->uploadedBytes.Load() * 100 / fs->totalBytes);
+                pctStr = str::FormatTemp("%d%%", pct);
+            } else {
+                pctStr = str::DupTemp("...");
+            }
+            Rect rcPct = {col3X, y, col3Dx, rowH};
+            HdcDrawText(hdc, pctStr, rcPct,
+                        DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_RIGHT, fontUp);
+
+            y += rowH + DpiScale(hdc, 2);
         }
     }
 

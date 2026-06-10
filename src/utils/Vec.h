@@ -8,6 +8,7 @@ store pointer types or POD types
 (http://stackoverflow.com/questions/146452/what-are-pod-types-in-c).
 
 */
+
 template <typename T>
 class Vec {
   public:

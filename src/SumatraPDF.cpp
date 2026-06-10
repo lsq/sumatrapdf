@@ -22,6 +22,7 @@
 #include "utils/Archive.h"
 #include "utils/Timer.h"
 #include "utils/LzmaSimpleArchive.h"
+#include "utils/StrQueue.h"
 
 #include "wingui/UIModels.h"
 #include "wingui/Layout.h"
@@ -4514,6 +4515,107 @@ static void RemoveFailedFiles(StrVec& files) {
     }
 }
 
+// 进度回调数据（在 uitask::Post 中传递）
+struct UploadProgressUIData {
+    MainWindow*     win;
+    UploadProgress* progress;
+};
+
+struct UploadTaskData {
+    MainWindow* win;
+    StrVec      filePaths;
+    char*       serverA;
+    int         port;
+    char*       urlA;
+    StrQueue*    stopQueue;
+    // UploadProgress* progress; // 指针，独立堆分配
+};
+
+static void OnUploadProgressUI(UploadProgressUIData* d) {
+    AutoDelete del(d);
+    if (!IsMainWindowValid(d->win)) return;
+    d->win->uploadProgress = d->progress;
+    InvalidateRect(d->win->hwndCanvas, nullptr, FALSE);
+}
+
+static void OnUploadProgress(UploadProgressUIData* ctx, UploadProgress *p) {
+    // 限流：每次回调都 Post（如需限流可加时间戳判断）
+    auto d = new UploadProgressUIData{ctx->win, p};
+    auto fn = MkFunc0(OnUploadProgressUI, d);
+    uitask::Post(fn, nullptr);
+}
+
+void UploadTask(UploadTaskData* d) {
+    AutoDelete del(d);
+
+    UploadProgressUIData cbCtx{d->win, nullptr};
+    auto cb = MkFunc1(OnUploadProgress, &cbCtx);
+    // OnUploadProgress(&cbCtx);
+
+    HttpPostFilesStreamPool(d->serverA, d->port, d->urlA,
+                            d->filePaths, 4, 64 * 1024, cb, d->stopQueue);
+
+    // 上传完成，清理 UI 状态
+    // auto cleanup = new UploadProgressUIData{d->win, nullptr};
+    // auto fn = MkFunc0(OnUploadProgressUI, cleanup);
+    // uitask::Post(fn, nullptr);
+
+    free(d->serverA);
+    free(d->urlA);
+    DestroyTempAllocator();
+}
+
+static void UploadFiles(MainWindow* win) {
+    if (!CanAccessDisk()) return;
+
+    // 1. 弹出文件选择对话框（复用 OpenFile 的逻辑）
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner   = win->hwndFrame;
+    ofn.lpstrFilter = GetFileFilterTemp();
+    ofn.nFilterIndex = 1;
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY |
+                OFN_ALLOWMULTISELECT | OFN_EXPLORER;
+    ofn.nMaxFile = MAX_PATH * 100;
+    AutoFreeWStr file = AllocArray<WCHAR>(ofn.nMaxFile);
+    ofn.lpstrFile = file;
+    if (!GetOpenFileNameW(&ofn)) return;
+
+    StrVec files;
+    GetFilesFromGetOpenFileName(&ofn, files);
+    if (files.Size() == 0) return;
+
+    // 2. 从配置读取服务器地址（gGlobalPrefs->remoteIp）
+    const char* remoteIp = gGlobalPrefs->remoteIp;
+    if (!remoteIp || !*remoteIp) {
+        // 没有配置 RemoteIp，弹出提示
+        MessageBoxW(win->hwndFrame,
+                    L"请在高级设置中配置 RemoteIp 选项",
+                    L"上传失败", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    // 3. 创建停止队列，保存到 win 以便取消
+    auto* stopQueue = new StrQueue();
+    win->uploadStopQueue = stopQueue;
+    // auto gProgress = new UploadProgress; // 独立堆分配
+
+    // 4. 启动上传任务
+    auto* d = new UploadTaskData();
+    d->win       = win;
+    d->filePaths = files;  // StrVec 复制
+    d->serverA   = str::Dup(remoteIp);
+    d->port      = 8880;     // 或从配置读取
+    d->urlA      = str::Dup("/upload");
+    d->stopQueue = stopQueue;
+    // d->progress = gProgress;
+
+    // win->uploadProgress = nullptr; //初始为空，等第一次回调再设置
+
+    auto fn = MkFunc0(UploadTask, d);
+    RunAsync(fn, "UploadFilesThread");
+}
+
 static StrVec& CollectNextPrevFilesIfChanged(const char* path) {
     StrVec& files = gNextPrevDirCache;
 
@@ -7938,6 +8040,9 @@ static LRESULT FrameOnCommand(MainWindow* win, HWND hwnd, UINT msg, WPARAM wp, L
             break;
         // 如果没有 Home 标签页（noHomeTab=true 或被关闭），
         // 可以新建一个 About 类型的 WindowTab 并插入
+        case CmdSendToRemote:
+            UploadFiles(win);
+            break;
 
         default:
             return DefWindowProc(hwnd, msg, wp, lp);

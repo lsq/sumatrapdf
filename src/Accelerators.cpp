@@ -310,6 +310,7 @@ ACCEL gBuiltInAccelerators[] = {
     {0, '.', CmdPresentationBlackBackground},
     {FVIRTKEY, 'C', CmdToggleContinuousView},
     {FCONTROL | FSHIFT | FVIRTKEY, 'H', CmdOpenHomePage},
+    {FCONTROL | FSHIFT | FVIRTKEY, 'U', CmdSendToRemote},
 };
 
 ACCEL* gAccels = nullptr;
