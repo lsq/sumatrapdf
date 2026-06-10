@@ -67,11 +67,26 @@ bool StrQueue::IsSentinel(Str s) {
     return s.s == (char*)kStrQueueSentinel;
 }
 
+void StrQueue::Stop() {
+    isStopped = true;
+    // 手动重置事件：SetEvent 后永久触发，所有等待线程同时被唤醒
+    SetEvent(hStopEvent);
+    SetEvent(hEvent); // 额外唤醒一次，防止有线程刚进入等待
+}
+
+bool StrQueue::IsStopped() {
+    return isStopped;
+}
+
 // is blocking
 // retuns sentinel value if no more strings
 // use IsSentinel() to check if returned value is a sentinel
 Str StrQueue::PopFront() {
+    HANDLE waitHandles[] = { hEvent, hStopEvent };
 again:
+    if (isStopped) {
+        return nullptr;
+    }
     Lock();
     if (len(strings) == 0) {
         bool end = isFinished;
@@ -79,10 +94,16 @@ again:
         if (end) {
             return StrQueueSentinel();
         }
-        HANDLE waitHandles[] = { hEvent, hStopEvent };
         DWORD res = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
+        if (res == WAIT_OBJECT_0 + 1) {
+            return nullptr;
+        }
         // WaitForSingleObject(hEvent, INFINITE);
         goto again;
+    }
+    if (isStopped) {
+        Unlock();
+        return nullptr;
     }
     Str s = strings.RemoveAt(0);
     Unlock();
