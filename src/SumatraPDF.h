@@ -132,6 +132,7 @@ bool SumatraLaunchBrowser(Str url);
 void LaunchDocumentation(Str docURI);
 bool MaybeLaunchDocumentation(Str url);
 bool OpenFileExternally(Str path);
+void OpenFileForHomePageList(MainWindow* win);
 void CloseCurrentTab(MainWindow* win, bool quitIfLast);
 void CloseTab(WindowTab* tab, bool quitIfLast);
 // true if read aloud was paused and can be resumed in this tab

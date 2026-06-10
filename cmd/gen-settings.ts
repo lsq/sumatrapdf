@@ -811,6 +811,7 @@ const globalPrefs: Field[] = [
     "2.5",
   ),
   mkField("RememberOpenedFiles", Bool, true, "if true, we remember which files we opened and their display settings"),
+  mkField("RemoteIp", Str, null, "socket ip address"),
   mkField(
     "RememberStatePerDocument",
     Bool,
@@ -1185,10 +1186,6 @@ const globalPrefs: Field[] = [
   ),
   notSaved(mkField("DefaultZoomFloat", Float, -1, "value of DefaultZoom for internal usage")),
   setStructName(mkCompactStruct("PropWinPos", pointPos, "position of the document properties window"), "Point"),
-  setDoc(
-    mkField("RemoteIp", Str, null, "socket ip address"),
-    "socket ip address",
-  ),
   mkEmptyLine(),
   mkComment("Settings below are not recognized by the current version"),
 ];
