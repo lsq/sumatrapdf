@@ -21,4 +21,5 @@ struct StrQueue {
     volatile bool isFinished = false;
     CRITICAL_SECTION cs;
     HANDLE hEvent = nullptr;
+    HANDLE hStopEvent = nullptr;
 };

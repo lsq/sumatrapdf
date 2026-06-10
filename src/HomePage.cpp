@@ -1133,15 +1133,19 @@ void LayoutHomePage(HomePageLayout& l) {
     Vec<FileState*> allFileStates;
     if (gGlobalPrefs->homePageListView && l.win->homePageSelectedFiles.Size() > 0) {
     // 用选择的文件替代历史记录
-    for (char* path : l.win->homePageSelectedFiles) {
+    StrVec files;
+    SliceFirst(l.win->homePageSelectedFiles, files);
+    StrVec expandedFiles;
+    ExpandFilesAndFolders(files, expandedFiles);
+    for (char* path : expandedFiles) {
         // 先从历史记录中查找已有的 FileState
-        FileState* fs = gFileHistory.FindByPath(path);
-        if (!fs) {
+        // FileState* fs = gFileHistory.FindByPath(path);
+        // if (!fs) {
             // 没有历史记录，创建临时 FileState（只有路径）
             // fs = New DisplayState(path);  // 或
-            fs = new FileState{}; //fs->filePath = str::Dup(path);
+            FileState* fs = new FileState{}; //fs->filePath = str::Dup(path);
             SetFileStatePath(fs, path);
-        }
+        // }
         allFileStates.Append(fs);
     }
     } else if(gGlobalPrefs->homePageSortByFrequentlyRead) {
@@ -1900,34 +1904,63 @@ static void DrawHomePageLayout(HomePageLayout& l) {
         ImageList_Draw(fs->himl, fs->iconIdx, hdc, x, rect.y, ILD_TRANSPARENT);
     }
     } else {
-    UINT rfmt = DT_SINGLELINE | DT_END_ELLIPSIS | DT_VCENTER | DT_NOPREFIX;
-    for (const FileListRow& row : l.rows) {
-        FileState* fs = row.fs;
-        // 第一列：完整文件路径（带省略号）
-        char *ip = gGlobalPrefs->remoteIp;
-        // TempStr fpath = str::FormatTemp("%s(ip:%s)", fs->filePath, ip);
-        TempStr fpath = str::FormatTemp("%s", fs->filePath);
-        HdcDrawText(hdc, fpath, row.rcPath, rfmt | DT_LEFT, fontText);
-        // 第二列：当前页 / 总页数
-        // TempStr pageStr = str::FormatTemp("%d / %d", fs->pageNo, fs->totalPages);
-        // HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
-        // 第三列：阅读百分比
-        i64 sz = file::GetSize(fs->filePath);
-        TempStr szStr = (sz >= 0) ? FormatSizeShortTransTemp(sz) : str::DupTemp("—");
-        TempStr pageStr = str::FormatTemp("%d / %s", fs->pageNo, szStr);
-        HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
+        if (win->homePageSelectedFiles.Size() > 0) {
+            UINT rfmt = DT_SINGLELINE | DT_END_ELLIPSIS | DT_VCENTER | DT_NOPREFIX;
+            for (const FileListRow& row : l.rows) {
+                FileState* fs = row.fs;
+                // 第一列：完整文件路径（带省略号）
+                char* ip = gGlobalPrefs->remoteIp;
+                // TempStr fpath = str::FormatTemp("%s(ip:%s)", fs->filePath, ip);
+                TempStr fpath = str::FormatTemp("%s", fs->filePath);
+                HdcDrawText(hdc, fpath, row.rcPath, rfmt | DT_LEFT, fontText);
+                // 第二列：当前页 / 总页数
+                // TempStr pageStr = str::FormatTemp("%d / %d", fs->pageNo, fs->totalPages);
+                // HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
+                // 第三列：阅读百分比
+                i64 sz = file::GetSize(fs->filePath);
+                TempStr szStr = (sz >= 0) ? FormatSizeShortTransTemp(sz) : str::DupTemp("—");
+                TempStr pageStr = str::FormatTemp("%d / %s", fs->pageNo, szStr);
+                HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
 
-        // int pct = (fs->totalPages > 0) ? (fs->pageNo * 100 / fs->totalPages) : 0;
-        int pct = (sz > 0) ? (fs->pageNo * 100 / sz) : 0;
-        TempStr pctStr = str::FormatTemp("%d%%", pct);
-        HdcDrawText(hdc, pctStr, row.rcPercent, rfmt | DT_RIGHT, fontText);
-        // 第四列：文件大小
-        // i64 sz = file::GetSize(fs->filePath);
-        // TempStr szStr = (sz >= 0) ? FormatSizeShortTransTemp(sz) : str::DupTemp("—");
-        // HdcDrawText(hdc, szStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
-        TempStr finishStr = (fs->pageNo == sz) ? str::DupTemp("✅ 完成") : str::DupTemp("⏳ 传输中");
-        HdcDrawText(hdc, finishStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
-    }
+                // int pct = (fs->totalPages > 0) ? (fs->pageNo * 100 / fs->totalPages) : 0;
+                int pct = (sz > 0) ? (fs->pageNo * 100 / sz) : 0;
+                TempStr pctStr = str::FormatTemp("%d%%", pct);
+                HdcDrawText(hdc, pctStr, row.rcPercent, rfmt | DT_RIGHT, fontText);
+                // 第四列：文件大小
+                // i64 sz = file::GetSize(fs->filePath);
+                // TempStr szStr = (sz >= 0) ? FormatSizeShortTransTemp(sz) : str::DupTemp("—");
+                // HdcDrawText(hdc, szStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
+                TempStr finishStr = (fs->pageNo == sz) ? str::DupTemp("✅ 完成") : str::DupTemp("⏳ 传输中");
+                HdcDrawText(hdc, finishStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
+            }
+        } else {
+            UINT rfmt = DT_SINGLELINE | DT_END_ELLIPSIS | DT_VCENTER | DT_NOPREFIX;
+            for (const FileListRow& row : l.rows) {
+                FileState* fs = row.fs;
+                // 第一列：完整文件路径（带省略号）
+                TempStr fpath = str::FormatTemp("%s", fs->filePath);
+                HdcDrawText(hdc, fpath, row.rcPath, rfmt | DT_LEFT, fontText);
+                // 第二列：当前页 / 总页数
+                TempStr pageStr = str::FormatTemp("%d / %d", fs->pageNo, fs->totalPages);
+                HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
+                // 第三列：阅读百分比
+                // i64 sz = file::GetSize(fs->filePath);
+                // TempStr szStr = (sz >= 0) ? FormatSizeShortTransTemp(sz) : str::DupTemp("—");
+                // TempStr pageStr = str::FormatTemp("%d / %s", fs->pageNo, szStr);
+                // HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
+
+                int pct = (fs->totalPages > 0) ? (fs->pageNo * 100 / fs->totalPages) : 0;
+                // int pct = (sz > 0) ? (fs->pageNo * 100 / sz) : 0;
+                TempStr pctStr = str::FormatTemp("%d%%", pct);
+                HdcDrawText(hdc, pctStr, row.rcPercent, rfmt | DT_RIGHT, fontText);
+                // 第四列：文件大小
+                i64 sz = file::GetSize(fs->filePath);
+                TempStr szStr = (sz >= 0) ? FormatSizeShortTransTemp(sz) : str::DupTemp("—");
+                HdcDrawText(hdc, szStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
+                // TempStr finishStr = (fs->pageNo == sz) ? str::DupTemp("✅ 完成") : str::DupTemp("⏳ 传输中");
+                // HdcDrawText(hdc, finishStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
+            }
+        }
     }
 
     // restore full clip region
