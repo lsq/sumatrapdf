@@ -1,6 +1,7 @@
 /* Copyright 2022 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
+
 struct DoubleBuffer;
 struct Edit;
 struct WebviewWnd;
@@ -26,6 +27,8 @@ struct FindMatch {
     int endGlyph = 0;
     char* snippet = nullptr; // UTF-8, owned (freed when findMatches is rebuilt)
 };
+struct UploadProgress;
+struct StrQueue;
 
 // factor by how large the non-maximized caption should be in relation to the tabbar
 #define kCaptionTabBarDyFactor 1.0f
@@ -286,6 +289,10 @@ struct MainWindow {
     // a list of static links (mainly used for About and Frequently Read pages)
     Vec<StaticLink*> staticLinks;
     StrVec homePageSelectedFiles; // files selected via "Open a document" in list view
+    // 当前上传进度（nullptr 表示无上传任务），由 UI 线程读写
+    UploadProgress* uploadProgress = nullptr;
+    // 上传取消队列（调用 uploadStopQueue->Stop() 取消上传）
+    StrQueue* uploadStopQueue = nullptr;
 
     // home page thumbnail scrolling
     int homePageScrollY = 0;

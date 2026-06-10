@@ -13,13 +13,16 @@ struct StrQueue {
     char* PopFront();
     bool IsSentinel(char*);
     void MarkFinished();
+    void Stop();
+    bool IsStopped();
     bool IsFinished();
     bool Access(const Func1<StrQueue*>& fn);
 
     StrVec strings;
 
     volatile bool isFinished = false;
+    volatile bool isStopped = false;
     CRITICAL_SECTION cs;
     HANDLE hEvent = nullptr;
-    HANDLE hStopEvent = nullptr;
+    HANDLE hStopEvent = nullptr; //新增：手动重置事件
 };

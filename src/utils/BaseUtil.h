@@ -149,6 +149,7 @@
 #include <string>
 #include <array>
 #include <limits>
+#include <atomic>
 
 #include "../common/common.h"
 
@@ -161,6 +162,51 @@ using u32 = uint32_t;
 using i64 = int64_t;
 using u64 = uint64_t;
 using uint = unsigned int;
+
+// 注意：必须用 volatile 修饰，防止编译器对读写进行优化/重排序
+struct AtomicInt64 {
+    volatile LONGLONG value;
+
+    // 默认初始化为 0
+    AtomicInt64() : value(0) {}
+    
+    // 支持显式初始化
+    explicit AtomicInt64(LONGLONG v) : value(v) {}
+
+    // ❌ 禁止拷贝和赋值，防止非原子操作
+    AtomicInt64(const AtomicInt64&) = delete;
+    AtomicInt64& operator=(const AtomicInt64&) = delete;
+
+    // ✅ 原子读取（Load）
+    // InterlockedCompareExchange64(ptr, 0, 0) 是 Windows 上
+    // 对 volatile LONGLONG 做原子读的标准惯用法
+    LONGLONG Load() const {
+        return InterlockedCompareExchange64(
+            const_cast<volatile LONGLONG*>(&value), 0, 0);
+    }
+
+    // ✅ 原子写入（Store）
+    LONGLONG Store(LONGLONG newValue) {
+        return InterlockedExchange64(&value, newValue);
+    }
+
+    // ✅ 原子加法，返回加之后的新值
+    LONGLONG Add(LONGLONG delta) {
+        return InterlockedAdd64(&value, delta);
+    }
+
+    // ✅ 原子加法，返回加之前的旧值（某些场景需要）
+    LONGLONG FetchAdd(LONGLONG delta) {
+        // InterlockedAdd64 返回的是新值，减去 delta 即为旧值
+        return InterlockedAdd64(&value, delta) - delta;
+    }
+
+    // ✅ 原子比较并交换（CAS）
+    // 如果当前值 == expected，则替换为 desired，返回 true
+    bool CompareExchange(LONGLONG desired, LONGLONG expected) {
+        return InterlockedCompareExchange64(&value, desired, expected) == expected;
+    }
+};
 
 // TODO: don't use INT_MAX and UINT_MAX
 #ifndef INT_MAX
