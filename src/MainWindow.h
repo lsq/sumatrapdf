@@ -285,6 +285,7 @@ struct MainWindow {
 
     // a list of static links (mainly used for About and Frequently Read pages)
     Vec<StaticLink*> staticLinks;
+    StrVec homePageSelectedFiles; // files selected via "Open a document" in list view
 
     // home page thumbnail scrolling
     int homePageScrollY = 0;

@@ -48,6 +48,7 @@ char* Sha1OfAppExe();
 TempStr GetWebViewDataDirTemp();
 
 TempStr FormatFileSizeTransTemp(i64);
+TempStr FormatSizeShortTransTemp(i64 size);
 
 bool LaunchFileIfExists(const char* path);
 

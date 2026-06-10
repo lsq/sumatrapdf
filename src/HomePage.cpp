@@ -33,6 +33,8 @@
 #include "AppSettings.h"
 #include "DarkModeSubclass.h"
 #include "SvgIcons.h"
+#include "utils/Log.h"
+#include "AppTools.h"
 
 #ifndef ABOUT_USE_LESS_COLORS
 #define ABOUT_LINE_OUTER_SIZE 2
@@ -1006,6 +1008,7 @@ struct FileListRow {
     Rect rcPath;     // 第一列：文件路径
     Rect rcPage;     // 第二列：当前页数
     Rect rcPercent;  // 第三列：阅读百分比
+    Rect rcFileSize;  // 第四列：文件大小
     FileState* fs = nullptr;
     StaticLink* sl = nullptr;
 };
@@ -1128,7 +1131,20 @@ void LayoutHomePage(HomePageLayout& l) {
     EnsureTipsParsed();
 
     Vec<FileState*> allFileStates;
-    if (gGlobalPrefs->homePageSortByFrequentlyRead) {
+    if (gGlobalPrefs->homePageListView && l.win->homePageSelectedFiles.Size() > 0) {
+    // 用选择的文件替代历史记录
+    for (char* path : l.win->homePageSelectedFiles) {
+        // 先从历史记录中查找已有的 FileState
+        FileState* fs = gFileHistory.FindByPath(path);
+        if (!fs) {
+            // 没有历史记录，创建临时 FileState（只有路径）
+            // fs = New DisplayState(path);  // 或
+            fs = new FileState{}; //fs->filePath = str::Dup(path);
+            SetFileStatePath(fs, path);
+        }
+        allFileStates.Append(fs);
+    }
+    } else if(gGlobalPrefs->homePageSortByFrequentlyRead) {
         gFileHistory.GetFrequencyOrder(allFileStates);
     } else {
         gFileHistory.GetRecentlyOpenedOrder(allFileStates);
@@ -1441,19 +1457,34 @@ void LayoutHomePage(HomePageLayout& l) {
 
     } else {
 
+    // 固定列宽
+    int colGap      = DpiScale(hdc, 8);   // 列间距
+    int rightMargin = DpiScale(hdc, 80);  // 右边距
+    int col2Dx      = DpiScale(hdc, 100); // 页数列固定宽度
+    int col3Dx      = DpiScale(hdc, 80);  // 百分比列固定宽度
+    int col4Dx      = DpiScale(hdc, 90);  // 文件大小列固定宽度
+
     int rowH = DpiScale(hdc, 22);
     int rowY = thumbsTopY - scrollY;
     int col1X = thumbsStartX;
-    int col2X = col1X + DpiScale(hdc, 800);  // 路径列宽度
-    int col3X = col2X + DpiScale(hdc, 80);   // 页数列宽度
+    int totalW = rc.dx - col1X - rightMargin; // 总可用宽度
+    int col1Dx = totalW - col2Dx - col3Dx - col4Dx - (3 * colGap);
+    if (col1Dx < DpiScale(hdc, 100)) {
+        col1Dx = DpiScale(hdc, 100); // 防止路径列过窄
+    }
+
+    int col2X = col1X + col1Dx + colGap;  // 路径列宽度
+    int col3X = col2X + col2Dx + colGap;   // 页数列宽度
+    int col4X = col3X + col3Dx + colGap;   // 文件大小列宽度
 
     for (FileState* fs : fileStates) {
         FileListRow& row = *l.rows.AppendBlanks(1);
         row.fs = fs;
-        row.rcPath    = {col1X, rowY, col2X - col1X - 4, rowH};
-        row.rcPage    = {col2X, rowY, col3X - col2X - 4, rowH};
-        row.rcPercent = {col3X, rowY, DpiScale(hdc, 80), rowH};
-        row.rcRow     = {col1X, rowY, rc.dx - col1X, rowH};
+        row.rcPath     = {col1X, rowY, col1Dx, rowH};
+        row.rcPage     = {col2X, rowY, col2Dx, rowH};
+        row.rcPercent  = {col3X, rowY, col3Dx, rowH};
+        row.rcFileSize = {col4X, rowY, col4Dx, rowH};
+        row.rcRow      = {col1X, rowY, rc.dx - col1X - rightMargin, rowH};
         // StaticLink 绑定文件路径
         row.sl = new StaticLink(row.rcRow, fs->filePath, fs->filePath);
         win->staticLinks.Append(row.sl);
@@ -1873,14 +1904,29 @@ static void DrawHomePageLayout(HomePageLayout& l) {
     for (const FileListRow& row : l.rows) {
         FileState* fs = row.fs;
         // 第一列：完整文件路径（带省略号）
-        HdcDrawText(hdc, fs->filePath, row.rcPath, rfmt | DT_LEFT, fontText);
+        char *ip = gGlobalPrefs->remoteIp;
+        // TempStr fpath = str::FormatTemp("%s(ip:%s)", fs->filePath, ip);
+        TempStr fpath = str::FormatTemp("%s", fs->filePath);
+        HdcDrawText(hdc, fpath, row.rcPath, rfmt | DT_LEFT, fontText);
         // 第二列：当前页 / 总页数
-        TempStr pageStr = str::FormatTemp("%d / %d", fs->pageNo, fs->totalPages);
-        HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
+        // TempStr pageStr = str::FormatTemp("%d / %d", fs->pageNo, fs->totalPages);
+        // HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
         // 第三列：阅读百分比
-        int pct = (fs->totalPages > 0) ? (fs->pageNo * 100 / fs->totalPages) : 0;
+        i64 sz = file::GetSize(fs->filePath);
+        TempStr szStr = (sz >= 0) ? FormatSizeShortTransTemp(sz) : str::DupTemp("—");
+        TempStr pageStr = str::FormatTemp("%d / %s", fs->pageNo, szStr);
+        HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
+
+        // int pct = (fs->totalPages > 0) ? (fs->pageNo * 100 / fs->totalPages) : 0;
+        int pct = (sz > 0) ? (fs->pageNo * 100 / sz) : 0;
         TempStr pctStr = str::FormatTemp("%d%%", pct);
         HdcDrawText(hdc, pctStr, row.rcPercent, rfmt | DT_RIGHT, fontText);
+        // 第四列：文件大小
+        // i64 sz = file::GetSize(fs->filePath);
+        // TempStr szStr = (sz >= 0) ? FormatSizeShortTransTemp(sz) : str::DupTemp("—");
+        // HdcDrawText(hdc, szStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
+        TempStr finishStr = (fs->pageNo == sz) ? str::DupTemp("✅ 完成") : str::DupTemp("⏳ 传输中");
+        HdcDrawText(hdc, finishStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
     }
     }
 
