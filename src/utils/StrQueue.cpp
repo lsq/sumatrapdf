@@ -9,11 +9,13 @@ StrQueue::StrQueue() {
     BOOL manualReset = FALSE;
     BOOL initialState = FALSE;
     hEvent = CreateEventW(nullptr /* SECURITY_ATTRIBUTES* */, manualReset, initialState, nullptr /* name */);
+    hStopEvent = CreateEventW(nullptr /* SECURITY_ATTRIBUTES* */, TRUE, initialState, nullptr /* name */);
 }
 
 StrQueue::~StrQueue() {
     DeleteCriticalSection(&cs);
     CloseHandle(hEvent);
+    CloseHandle(hStopEvent);
 }
 
 void StrQueue::Lock() {
@@ -36,6 +38,7 @@ bool StrQueue::IsFinished() {
     Lock();
     auto res = isFinished;
     Unlock();
+    SetEvent(hStopEvent);
     return res;
 }
 
@@ -72,7 +75,9 @@ again:
         if (end) {
             return (char*)kStrQueueSentinel;
         }
-        WaitForSingleObject(hEvent, INFINITE);
+        HANDLE waitHandles[] = { hEvent, hStopEvent };
+        DWORD res = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
+        // WaitForSingleObject(hEvent, INFINITE);
         goto again;
     }
     char* s = strings.RemoveAt(0);

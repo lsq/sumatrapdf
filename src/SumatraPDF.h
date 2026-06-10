@@ -235,3 +235,6 @@ void SmartZoom(MainWindow* win, float factor, Point* pt, bool smartZoom);
 TempStr GetNotImportantDataDirTemp();
 TempStr GetCrashInfoDirTemp();
 TempStr GetVerDirNameTemp(const char* prefix);
+
+void ExpandFilesAndFolders(const StrVec& filesAndFolders, StrVec& result);
+void SliceFirst(const StrVec& str, StrVec& result);

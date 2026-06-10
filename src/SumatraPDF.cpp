@@ -4320,6 +4320,33 @@ static void GetFolderFilesFromGetOpenFileName(OPENFILENAMEW* ofn, StrVec& filesO
         file += str::Leni(file) + 1;
     }
 }
+
+// 遍历 filesAndFolders：
+//   - 若元素是目录，递归展开目录下所有文件并添加到 result
+//   - 若元素是文件，直接添加到 result
+void ExpandFilesAndFolders(const StrVec& filesAndFolders, StrVec& result) {
+    for (char* path : filesAndFolders) {
+        if (dir::Exists(path)) {
+            DirIter di(path);
+            di.includeFiles = true;
+            di.includeDirs = false;
+            di.recurse = true;
+            for (DirIterEntry* de : di) {
+                result.Append(de->filePath);
+            }
+        } else if (file::Exists(path)) {
+            result.Append(path);
+        }
+    }
+}
+
+void SliceFirst(const StrVec& str, StrVec& result) {
+    int n = str.Size();
+    for (int i = 1; i < n; i++) {
+        result.Append(str.At(i));
+    }
+}
+
 static TempWStr GetFileFilterTemp() {
     const struct {
         const char* name; /* nullptr if only to include in "All supported documents" */
@@ -4474,6 +4501,8 @@ void OpenFileForHomePageList(MainWindow* win) {
     // StrVec files;
     win->homePageSelectedFiles.Reset();
     GetFolderFilesFromGetOpenFileName(&ofn, win->homePageSelectedFiles);
+    // GetFolderFilesFromGetOpenFileName(&ofn, files);
+    // ExpandFilesAndFolders(files, win->homePageSelectedFiles);
     win->RedrawAll(true);
 }
 static void RemoveFailedFiles(StrVec& files) {
