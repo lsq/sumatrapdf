@@ -85,7 +85,11 @@ static void OnMouseLeftButtonUpAbout(MainWindow* win, int x, int y, WPARAM) {
         return;
     }
     if (str::Eq(url, kLinkOpenFile)) {
-        HwndSendCommand(win->hwndFrame, CmdOpenFile);
+        if (gGlobalPrefs->homePageListView) {
+            OpenFileForHomePageList(win);
+        } else {
+            HwndSendCommand(win->hwndFrame, CmdOpenFile);
+        }
     } else if (str::Eq(url, kLinkHideList)) {
         gGlobalPrefs->showStartPage = false;
         win->RedrawAll(true);

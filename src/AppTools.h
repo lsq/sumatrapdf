@@ -43,6 +43,7 @@ void EnsureAreaVisibility(Rect& rect);
 Rect GetDefaultWindowPos();
 void SaveCallstackLogs();
 
+TempStr FormatSizeShortTransTemp(i64 size);
 TempStr FormatFileSizeTransTemp(i64);
 
 bool LaunchFileIfExists(const char* path);

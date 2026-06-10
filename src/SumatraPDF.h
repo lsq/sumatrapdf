@@ -124,6 +124,7 @@ bool AnnotationsAreDisabled();
 bool IsUIRtl();
 bool SumatraLaunchBrowser(const char* url);
 bool OpenFileExternally(const char* path);
+void OpenFileForHomePageList(MainWindow* win);
 void CloseCurrentTab(MainWindow* win, bool quitIfLast);
 void CloseTab(WindowTab* tab, bool quitIfLast);
 bool CanCloseWindow(MainWindow* win);

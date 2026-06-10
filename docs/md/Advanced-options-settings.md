@@ -87,6 +87,9 @@ ReloadModifiedDocuments = true
 ; if true, we remember which files we opened and their display settings
 RememberOpenedFiles = true
 
+; socket ip address
+RemoteIp =
+
 ; if true, we store display settings for each document separately (i.e.
 ; everything after UseDefaultState in FileStates)
 RememberStatePerDocument = true
@@ -641,9 +644,6 @@ OpenCountWeek = 0
 
 ; position of the document properties window
 PropWinPos = 0 0
-
-; socket ip address
-RemoteIp =
 ```
 
 ## Syntax for color values
