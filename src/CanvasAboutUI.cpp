@@ -5,6 +5,8 @@
 #include "utils/Dpi.h"
 #include "utils/Timer.h"
 #include "utils/WinUtil.h"
+#include "utils/UITask.h"
+#include "utils/HttpUtil.h"
 
 #include "wingui/UIModels.h"
 
@@ -76,6 +78,16 @@ static bool IsLink(const char* url) {
     return false;
 }
 
+struct CloseUploadData { MainWindow* win; };
+static void OnUploadFinished(CloseUploadData* d) {
+    AutoDelete del(d);
+    if (!IsMainWindowValid(d->win)) return;
+    if (!d->win->uploadProgress) return;
+    delete(d->win->uploadProgress);
+    d->win->uploadProgress = nullptr;
+    d->win->RedrawAll(false);
+}
+
 static void OnMouseLeftButtonUpAbout(MainWindow* win, int x, int y, WPARAM) {
     char* url = GetStaticLinkAtTemp(win->staticLinks, x, y, nullptr);
     char* prevUrl = win->urlOnLastButtonDown;
@@ -99,6 +111,11 @@ static void OnMouseLeftButtonUpAbout(MainWindow* win, int x, int y, WPARAM) {
     } else if (str::Eq(url, kLinkNextTip)) {
         PickAnotherRandomPromotion();
         win->RedrawAll(true);
+    } else if (str::Eq(url, kLinkCloseUpload)) {
+        // 通过 uitask::Post 在消息处理完成后再清理，避免重入
+        auto cleanup = new CloseUploadData{win};
+        auto cfn = MkFunc0(OnUploadFinished, cleanup);
+        uitask::Post(cfn, "UploadFinished");
     } else if (str::StartsWith(url, "Cmd")) {
         int cmdId = GetCommandIdByName(url);
         if (cmdId > 0) {

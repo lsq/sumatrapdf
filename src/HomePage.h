@@ -20,6 +20,7 @@ constexpr const char* kLinkOpenFile = "<File,Open>";
 constexpr const char* kLinkShowList = "<View,ShowList>";
 constexpr const char* kLinkHideList = "<View,HideList>";
 constexpr const char* kLinkNextTip = "<NextTip>";
+constexpr const char* kLinkCloseUpload = "<Upload,Close>";
 
 void SetPromoString(const char*);
 

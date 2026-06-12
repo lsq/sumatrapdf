@@ -4545,7 +4545,16 @@ static void OnUploadProgress(UploadProgressUIData* ctx, UploadProgress *p) {
     uitask::Post(fn, nullptr);
 }
 
-void UploadTask(UploadTaskData* d) {
+static void OnUploadFinishedUI(UploadProgressUIData* d) {
+    AutoDelete del(d);
+    if (!IsMainWindowValid(d->win)) return;
+    if (!d->win->uploadProgress) return;
+    delete(d->win->uploadProgress);
+    d->win->uploadProgress = nullptr;
+    d->win->RedrawAll(false);
+}
+
+static void UploadTask(UploadTaskData* d) {
     AutoDelete del(d);
 
     UploadProgressUIData cbCtx{d->win, nullptr};
@@ -4557,8 +4566,8 @@ void UploadTask(UploadTaskData* d) {
 
     // 上传完成，清理 UI 状态
     // auto cleanup = new UploadProgressUIData{d->win, nullptr};
-    // auto fn = MkFunc0(OnUploadProgressUI, cleanup);
-    // uitask::Post(fn, nullptr);
+    // auto fn = MkFunc0(OnUploadFinishedUI, cleanup);
+    // uitask::Post(fn, "UploadFinished");
 
     free(d->serverA);
     free(d->urlA);
@@ -4567,6 +4576,11 @@ void UploadTask(UploadTaskData* d) {
 
 static void UploadFiles(MainWindow* win) {
     if (!CanAccessDisk()) return;
+
+    // 上传完成，清理 UI 状态
+    auto cleanup = new UploadProgressUIData{win, nullptr};
+    auto cfn = MkFunc0(OnUploadFinishedUI, cleanup);
+    uitask::Post(cfn, "UploadFinished");
 
     // 1. 弹出文件选择对话框（复用 OpenFile 的逻辑）
     OPENFILENAMEW ofn{};
