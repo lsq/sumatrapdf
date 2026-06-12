@@ -365,7 +365,7 @@ struct BoundedByteQueue {
 
     explicit BoundedByteQueue(int maxChunks) : maxChunks(maxChunks) {
         InitializeCriticalSection(&cs);
-        hNotEmpty = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        hNotEmpty = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         hNotFull  = CreateSemaphoreW(nullptr, maxChunks, maxChunks, nullptr);
     }
     ~BoundedByteQueue() {
@@ -395,32 +395,35 @@ struct BoundedByteQueue {
     }
 
     void MarkFinished() {
+        // 在 MarkFinished() 中：
+        // logf("MarkFinished called at %llu\n", GetTickCount64());
         EnterCriticalSection(&cs);
         finished = true;
-        LeaveCriticalSection(&cs);
         // 加上这行日志
-        logf("debug: MarkFinished called. hNotEmpty handle = %p\n", hNotEmpty);
+        // logf("debug: MarkFinished called. hNotEmpty handle = %p\n", hNotEmpty);
         SetEvent(hNotEmpty);
+        LeaveCriticalSection(&cs);
     }
 
     // 消费者：阻塞直到有数据，返回 false 表示结束
     bool Pop(ByteChunk& out) {
     // again:
     while (true) {
-        // WaitForSingleObject(hNotEmpty, INFINITE);
+        // logf("Pop entered at %llu\n", GetTickCount64());
+        WaitForSingleObject(hNotEmpty, INFINITE);
         EnterCriticalSection(&cs);
-        if (chunks.Size() == 0) {
-            bool done = finished;
-            LeaveCriticalSection(&cs);
-            if (done) return false;
-            // goto again;
-        }
+        // if (chunks.Size() == 0) {
+        //     bool done = finished;
+        //     LeaveCriticalSection(&cs);
+        //     if (done) return false;
+        //     // goto again;
+        // }
 
         if (chunks.Size() > 0) {
         out = chunks.PopAt(0);
         // bool needRelease = (chunks.Size() < maxChunks);
         LeaveCriticalSection(&cs);
-        // if (needRelease) 
+        // if (needRelease)
         ReleaseSemaphore(hNotFull, 1, nullptr);
         return true;
         }
@@ -431,7 +434,7 @@ struct BoundedByteQueue {
         }
 
         LeaveCriticalSection(&cs);
-        WaitForSingleObject(hNotEmpty, INFINITE);
+        // WaitForSingleObject(hNotEmpty, INFINITE);
     }
     }
 };
@@ -447,7 +450,7 @@ struct FileReaderData {
 };
 
 static void FileReaderThread(FileReaderData* td) {
-    AutoDelete del(td);
+    // AutoDelete del(td); // 下面已经用delete管理了，不需要了
     WCHAR* pathW = ToWStrTemp(td->filePath);
     HANDLE hFile = CreateFileW(pathW, GENERIC_READ, FILE_SHARE_READ,
                                nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);

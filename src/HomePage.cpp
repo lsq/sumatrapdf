@@ -27,6 +27,7 @@
 #include "Menu.h"
 #include "TipText.h"
 #include "HomePage.h"
+#include <wingdi.h>
 #include "Translations.h"
 #include "Version.h"
 #include "Theme.h"
@@ -1034,8 +1035,10 @@ struct HomePageLayout {
     Vec<ThumbnailLayout> thumbnails; // info for each thumbnail
     Vec<FileListRow> rows;
     // 上传进度区域（仅当 win->uploadProgress != nullptr 时有效）
-    Rect rcUploadPanel;
+    Rect rcUploadPanel;    // 上传进度区域
     bool hasUpload = false;
+    int uploadPanelH = 0; // 面板高度（用于压缩缩略图区域）
+    Rect rcCloseUpload;   // 关闭上传面板按钮
     int totalContentDy = 0;          // total height of all thumbnail rows
     int thumbsVisibleDy = 0;         // visible height for thumbnails area
     Rect rcThumbsArea;               // clip rect for thumbnails
@@ -1333,6 +1336,27 @@ void LayoutHomePage(HomePageLayout& l) {
         tipHeight = tip->totalDy + 2 * tipPadding;
     }
 
+    // step 3 before: upload progress area
+    // --- 上传进度面板（如果有上传任务）---
+    int uploadPanelH = 0;
+    UploadProgress* up = win->uploadProgress;
+    if (up) {
+        HFONT fontUpload = CreateSimpleFont(hdc, "MS Shell Dlg", 13);
+        int rowH    = DpiScale(hdc, 20);
+        int padding = DpiScale(hdc, 8);
+        int nFiles  = up->fileStates.Size();
+        // 标题行 + 总进度条 + 每个文件一行
+        uploadPanelH = padding + rowH + DpiScale(hdc, 6) + rowH + (nFiles * (rowH + DpiScale(hdc, 2))) + padding;
+        l.rcUploadPanel = { rc.x + kThumbsMarginLeft, headerBottomY + DpiScale(hdc, 8), rc.dx - kThumbsMarginLeft - kThumbsMarginRight, uploadPanelH};
+        l.uploadPanelH  = uploadPanelH;
+        l.hasUpload = true;
+
+        // 关闭按钮: 右上角20x20
+        int btnSz = DpiScale(hdc, 20);
+        l.rcCloseUpload = Rect(l.rcUploadPanel.x + l.rcUploadPanel.dx - btnSz - DpiScale(hdc, 4), l.rcUploadPanel.y + DpiScale(hdc, 2), btnSz, btnSz);
+        auto csl = new StaticLink(l.rcCloseUpload, kLinkCloseUpload, nullptr);
+        win->staticLinks.Append(csl);
+    }
     // --- Step 3: middle area for thumbnails/list ---
     // content starts directly after headerBottomY (which includes kSearchThumbnailsGapY)
     int thumbsTopY = headerBottomY;
@@ -1366,6 +1390,8 @@ void LayoutHomePage(HomePageLayout& l) {
 
     Point ptOff(thumbsStartX, thumbsTopY - scrollY);
 
+#if 0
+// if(false) {
     // 如果有上传任务，在底部预留进度面板
     if (l.win && l.win->uploadProgress) {
         UploadProgress* up = l.win->uploadProgress;
@@ -1376,6 +1402,8 @@ void LayoutHomePage(HomePageLayout& l) {
                            panelH};
         l.hasUpload = true;
     }
+}
+#endif
 
     if(!gGlobalPrefs->homePageListView) {
     if (showList) {
@@ -1872,6 +1900,129 @@ static void DrawHomePageLayout(HomePageLayout& l) {
     l.freqRead->Paint(hdc);
     SelectObject(hdc, GetStockBrush(NULL_BRUSH));
 
+    // --- 绘制上传进度面板 ---
+    UploadProgress* up = l.win->uploadProgress;
+    if (up && l.uploadPanelH > 0) {
+        HFONT fontUp = CreateSimpleFont(hdc, "MS Shell Dlg", 13);
+        int rowH    = DpiScale(hdc, 20);
+        int padding = DpiScale(hdc, 8);
+        int barH    = DpiScale(hdc, 8);
+        int colGap  = DpiScale(hdc, 8);
+        int rightM  = DpiScale(hdc, 20);
+        RECT rcPanl = ToRECT(l.rcUploadPanel);
+
+        // 面板背景
+        // COLORREF panelBg = AccentColor(ThemeControlBackgroundColor(), 15);
+        COLORREF panelBg = ThemeControlBackgroundColor();
+        HBRUSH brBg = CreateSolidBrush(panelBg);
+        // FillRect(hdc, l.rcUploadPanel, panelBg);
+        FillRect(hdc, l.rcUploadPanel, brBg);
+        DeleteObject(brBg);
+
+        // 画边框
+        HPEN penBorder = CreatePen(PS_SOLID, 1, ThemeWindowTextColor());
+        ScopedSelectObject selPen(hdc, penBorder, true);
+        FrameRect(hdc, &rcPanl, (HBRUSH)GetStockObject(NULL_BRUSH));
+
+        SelectObject(hdc, fontUp);
+        SetTextColor(hdc, ThemeWindowTextColor());
+        SetBkMode(hdc, TRANSPARENT);
+
+        int x = l.rcUploadPanel.x + padding;
+        int y = l.rcUploadPanel.y + padding;
+        int panelW = l.rcUploadPanel.dx - 3 * padding;
+
+        SetTextColor(hdc, ThemeWindowTextColor());
+        SelectObject(hdc, fontUp);
+
+        // --- 总进度标题行 ---
+        int nTotal     = up->nTotal;
+        int nCompleted = AtomicIntGet(&up->nCompleted);
+        i64 totalBytes    = up->totalBytes;
+        i64 uploadedBytes = up->uploadedBytes.Load();
+        int globalPct = (totalBytes > 0) ? (int)(uploadedBytes * 100 / totalBytes) : 0;
+
+        TempStr titleStr = str::FormatTemp("Uploading: %d / %d files  (%d%%, %s / %s)",
+                                           nCompleted, nTotal, globalPct,
+                                           FormatSizeShortTransTemp(uploadedBytes),
+                                           FormatSizeShortTransTemp(totalBytes)
+                                           );
+        Rect rcTitle = {x, y, panelW - DpiScale(hdc, 60), rowH};
+        HdcDrawText(hdc, titleStr, rcTitle, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX, fontUp);
+        // 关闭按钮 ×
+        HFONT fontBtn = CreateSimpleFont(hdc, "Arial", 14);
+        SelectObject(hdc, fontBtn);
+        RECT rcBtn = ToRECT(l.rcCloseUpload);
+        DrawTextW(hdc, L"\u00D7", -1, &rcBtn,
+                  DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        DeleteObject(fontBtn);
+
+        y += rowH + DpiScale(hdc, 4);
+
+        // --- 总进度条 ---
+        Rect rcBarBg = {x, y, panelW, barH};
+        FillRect(hdc, rcBarBg, ThemeControlBackgroundColor());
+        if (globalPct > 0) {
+            Rect rcBarFg = {x, y, panelW * globalPct / 100, barH};
+            FillRect(hdc, rcBarFg, RGB(0, 120, 215));  // Windows 蓝
+        }
+        y += barH + DpiScale(hdc, 6);
+
+        // --- 每个文件的进度行 ---
+        int pctW      = DpiScale(hdc, 80);                    // 百分比列
+        int prgW      = DpiScale(hdc, 100);                   // 进度条列
+        int sizeW     = DpiScale(hdc, 200);                    // 已上传/总大小列
+        int fileNameW = panelW - prgW - pctW - sizeW - 3 * colGap; // 文件名列
+        int col1X   = x;
+        int col2X   = col1X + fileNameW + colGap;
+        int col3X   = col2X + prgW + colGap;
+        int col4X   = col3X + pctW + colGap;
+
+        for (int i = 0; i < up->fileStates.Size(); i++) {
+            const FileUploadState* fs = up->fileStates[i];
+            if (!fs->isActive && !fs->isDone) continue;
+
+            // 文件名（取 basename）
+            TempStr baseName = path::GetBaseNameTemp(fs->filePath);
+            Rect rcName = {x, y, fileNameW, rowH};
+            HdcDrawText(hdc, baseName, rcName,
+                        DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX, fontUp);
+
+            // 第二列：进度条
+            Rect rcBar = {col2X, y + DpiScale(hdc, 4), prgW, rowH - DpiScale(hdc, 8)};
+            COLORREF barBg  = AccentColor(panelBg, 40);
+            COLORREF barFg  = ThemeWindowLinkColor();
+            FillRect(hdc, rcBar, barBg);
+            if (fs->totalBytes > 0) {
+                int fillW = (int)(rcBar.dx * fs->uploadedBytes.Load() / fs->totalBytes);
+                Rect rcFill = {rcBar.x, rcBar.y, fillW, rcBar.dy};
+                FillRect(hdc, rcFill, barFg);
+            }
+
+            // 百分比
+            int filePct = (fs->totalBytes > 0)
+                ? (int)(fs->uploadedBytes.Load() * 100 / fs->totalBytes) : 0;
+            TempStr pctStr = fs->isDone
+                ? (fs->isFailed ? str::DupTemp("❌FAIL") : str::DupTemp("✅ 完成"))
+                : str::FormatTemp("⏳(%d%%)", filePct);
+            Rect rcPct = { col3X, y, pctW, rowH};
+            HdcDrawText(hdc, pctStr, rcPct,
+                        DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX, fontUp);
+
+            // 已上传 / 总大小
+            TempStr sizeStr = str::FormatTemp("%s / %s",
+                FormatSizeShortTransTemp(fs->uploadedBytes.Load()),
+                FormatSizeShortTransTemp(fs->totalBytes));
+            Rect rcSize = { col4X, y, sizeW, rowH};
+            HdcDrawText(hdc, sizeStr, rcSize,
+                        DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX, fontUp);
+
+            y += rowH + DpiScale(hdc, 2);
+        }
+
+        DeleteObject(fontUp);
+    }
+
     // clip thumbnails to the middle area
     {
         const Rect& ta = l.rcThumbsArea;
@@ -1978,6 +2129,9 @@ static void DrawHomePageLayout(HomePageLayout& l) {
         }
     }
 
+#if 0
+
+    if(false) {
     // 绘制上传进度面板
     if (l.hasUpload && l.win->uploadProgress) {
         UploadProgress* up = l.win->uploadProgress;
@@ -2049,6 +2203,8 @@ static void DrawHomePageLayout(HomePageLayout& l) {
             y += rowH + DpiScale(hdc, 2);
         }
     }
+    }
+#endif
 
     // restore full clip region
     SelectClipRgn(hdc, nullptr);

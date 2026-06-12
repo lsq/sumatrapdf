@@ -24,6 +24,7 @@ constexpr const char* kLinkHomeListView = "<HomePage,ListView>";
 constexpr const char* kLinkHomeThumbnailView = "<HomePage,ThumbnailView>";
 constexpr const char* kLinkHomeRemoveFilePrefix = "<HomePage,RemoveFile>";
 constexpr const char* kLinkHomePinFilePrefix = "<HomePage,PinFile>";
+constexpr const char* kLinkCloseUpload = "<Upload,Close>";
 
 void SetPromoString(const char*);
 
