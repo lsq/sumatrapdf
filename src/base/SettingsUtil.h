@@ -32,6 +32,7 @@ enum class SettingType {
     Color,
     Float,
     Int,
+    Int64,
     String,
     ColorArray,
     FloatArray,

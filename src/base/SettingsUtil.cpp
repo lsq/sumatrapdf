@@ -3,6 +3,7 @@
 
 #include "Base.h"
 #include "SettingsUtil.h"
+#include <cstdlib>
 #include "SquareTreeParser.h"
 
 static inline const StructInfo* GetSubstruct(const FieldInfo& field) {
@@ -197,6 +198,7 @@ bool IsCompactable(const StructInfo* info) {
         switch (info->fields[i].type) {
             case SettingType::Bool:
             case SettingType::Int:
+            case SettingType::Int64:
             case SettingType::Float:
             case SettingType::Color:
                 continue;
@@ -219,6 +221,9 @@ static bool SerializeField(str::Builder& out, const u8* base, const FieldInfo& f
             return true;
         case SettingType::Int:
             out.Append(fmt("%d", *(int*)fieldPtr));
+            return true;
+        case SettingType::Int64:
+            out.AppendFmt("%lld", *(i64*)fieldPtr);
             return true;
         case SettingType::Float:
             out.Append(fmt("%g", *(float*)fieldPtr));
@@ -327,6 +332,16 @@ static void deserializeField(const FieldInfo& field, u8* base, Str value) {
                 *intPtr = (int)field.value;
             }
         } break;
+
+        case SettingType::Int64: {
+            i64* i64Ptr = (i64*)fieldPtr;
+            if (value) {
+                *i64Ptr = _atoi64(value);
+            } else {
+                *i64Ptr = (i64)field.value;
+            }
+        } break;
+
 
         case SettingType::Float: {
             Str s = !str::IsNull(value) ? value : FieldDefaultStr(field);
@@ -605,6 +620,7 @@ static void FreeStructData(const StructInfo* info, u8* base) {
         switch (field.type) {
             case SettingType::Bool:
             case SettingType::Int:
+            case SettingType::Int64:
             case SettingType::Float:
             case SettingType::Comment:
                 // nothing to free
