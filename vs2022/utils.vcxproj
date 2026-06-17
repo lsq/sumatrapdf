@@ -866,6 +866,9 @@
     <ClInclude Include="..\src\utils\HttpUtil.h" />
     <ClInclude Include="..\src\utils\JsonParser.h" />
     <ClInclude Include="..\src\utils\JxlReader.h" />
+    <ClInclude Include="..\src\utils\JsonUtil.h" />
+    <ClInclude Include="..\src\utils\protocol\Constants.h" />
+    <ClInclude Include="..\src\utils\protocol\Models.h" />
     <ClInclude Include="..\src\utils\Log.h" />
     <ClInclude Include="..\src\utils\LzmaSimpleArchive.h" />
     <ClInclude Include="..\src\utils\Scoped.h" />
@@ -922,6 +925,8 @@
     <ClCompile Include="..\src\utils\HttpUtil.cpp" />
     <ClCompile Include="..\src\utils\JsonParser.cpp" />
     <ClCompile Include="..\src\utils\JxlReader.cpp" />
+    <ClCompile Include="..\src\utils\JsonUtil.cpp" />
+    <ClCompile Include="..\src\utils\client\FileSource.cpp" />
     <ClCompile Include="..\src\utils\Log.cpp" />
     <ClCompile Include="..\src\utils\LzmaSimpleArchive.cpp" />
     <ClCompile Include="..\src\utils\SettingsUtil.cpp" />

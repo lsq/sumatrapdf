@@ -12,6 +12,9 @@ The intent is to standardize how we do it.
 */
 
 // as an exception, we include system headers needed for the calls that we dynamically load
+#ifndef _UTILS_WINDYNCALLS_H
+#define _UTILS_WINDYNCALLS_H
+
 #include <windows.h>
 #include <dwmapi.h>
 #include <vssym32.h>
@@ -185,3 +188,5 @@ BOOL SetGestureConfig(HWND hwnd, DWORD dwReserved, UINT cIDs, PGESTURECONFIG pGe
 
 void NoDllHijacking();
 void PrioritizeSystemDirectoriesForDllLoad();
+
+#endif // _UTILS_WINDYNCALLS_H

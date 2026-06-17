@@ -1,6 +1,8 @@
 /* Copyright 2022 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
+#ifndef _UTILS_WINUTIL_H
+#define _UTILS_WINUTIL_H
 #define NO_COLOR (COLORREF) - 1
 
 #define WIN_COL_WHITE RGB(0xff, 0xff, 0xff)
@@ -405,3 +407,5 @@ double TimeDiffSecs(const LARGE_INTEGER& start, const LARGE_INTEGER& end);
 double TimeDiffMs(const LARGE_INTEGER& start, const LARGE_INTEGER& end);
 bool IsPEFileSigned(const char* filePath);
 TempStr GetExecutableSignerTemp(const char* exePath);
+
+#endif // _UTILS_WINUTIL_H
