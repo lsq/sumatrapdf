@@ -237,6 +237,7 @@ void DecodeInPlace(char* url);
 bool IsAbsolute(const char* url);
 TempStr GetFullPathTemp(const char* url);
 TempStr GetFileNameTemp(const char* url);
+TempStr UrlEncodeTemp(const char* s);
 
 } // namespace url
 
