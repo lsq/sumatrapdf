@@ -1,6 +1,8 @@
 /* Copyright 2022 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
+#ifndef _UTILS_WINUTIL_H
+#define _UTILS_WINUTIL_H
 #define NO_COLOR (COLORREF) - 1
 
 #define WIN_COL_WHITE RGB(0xff, 0xff, 0xff)
@@ -412,3 +414,4 @@ int MeasureStringWidth(HDC hdc, WStr str);
 Str GetLastErrorAsStr(Arena* arena);
 bool WasLaunchedByPowershellWithPipeRedirect();
 Str GetAppLocalDataDirTemp();
+#endif // _UTILS_WINUTIL_H

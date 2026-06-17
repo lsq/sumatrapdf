@@ -1,6 +1,8 @@
 /* Copyright 2022 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
+#include "utils/BaseUtil.h"
+#include "utils/WinDynCalls.h"
 struct Mutex {
     CRITICAL_SECTION cs;
 
