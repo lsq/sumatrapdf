@@ -4,7 +4,6 @@
 #ifndef _LOCALSEND_MODELS_H
 #define _LOCALSEND_MODELS_H
 
-#include <cstddef>
 #include "utils/BaseUtil.h"
 #include "utils/SettingsUtil.h"
 namespace LocalSend {
