@@ -21,7 +21,7 @@ struct FileOutcome {
 struct SendReport {
 	bool prepared = false;
 	int prepareStatus = 0; // codice HTTP del prepare-upload
-	char* sessionId;
+	const char* sessionId;
 	Vec<FileOutcome> files;
 	bool AllSent() const;
 };
@@ -36,11 +36,11 @@ public:
 	// Invia i file al ricevente host:port. 'pin' opzionale (vuoto = nessuno).
 	// 'progress' viene chiamato durante l'invio con i byte trasferiti.
 	SendReport Send(const char* host, int port,
-		const Vec<FileMetadata*>& files,
+		const StrVecWithData<FileMetadata*>* files,
 		// const char* pin = "",
 		const Func1<UploadProgress*>& cbProgress);
 	SendReport Send(const char* host, int port,
-		const Vec<FileMetadata*>& files,
+		const StrVecWithData<FileMetadata*>* files,
 		// const char* pin = "",
 		void*) {
         return Send(host, port, files, Func1<UploadProgress*>());

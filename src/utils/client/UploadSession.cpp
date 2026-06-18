@@ -1,8 +1,7 @@
 #include "utils/client/UploadSession.h"
-#include "utils/net/HttpClient.h"
-
 #include "utils/BaseUtil.h"
 #include "utils/net/IHttpClient.h"
+#include "utils/net/HttpClient.h"
 #include "utils/protocol/Constants.h"
 
 namespace LocalSend {
@@ -40,38 +39,52 @@ UploadSession::Cancel(const char* host, int port,
 
 SendReport
 UploadSession::Send(const char* host, int port,
-	const Vec<FileMetadata*>& files, //const std::string& pin,
+	const StrVecWithData<FileMetadata*>& files, //const std::string& pin,
 	const Func1<UploadProgress*>& progress)
 {
 	SendReport report;
 
 	// Passo 1: prepare-upload (solo metadati).
-	StrBuilder preparePath(kApiPrepareUpload);
+	TempStr preparePath = str::DupTemp(kApiPrepareUpload);
 	// if (!pin.empty())
 	// 	preparePath += "?pin=" + UrlEncode(pin);
 
-	StrBuilder body;
-    bool ok = BuildPrepareUpload(fInfo, files, &body);
-	HttpResponse resp = fHttp.Post(host, port, preparePath, "application/json",
-		body.Dump());
-	report.prepareStatus = resp.status;
+    StrBuilder body(BuildPrepareUpload(fInfo, &files));
+    StrBuilder headers("application/json");
+	HttpResponse resp = fHttp.Post(host, port, preparePath, &headers,
+		&body);
+	report.prepareStatus = resp.httpStatusCode;
 
 	if (!resp.IsOk()) {
-		// 204 = nessun file accettato; 401/403 = PIN/rifiuto; 409 = sessione in
-		// corso; 429 = troppe richieste; altri = errore.
+		// 204 = Finished (No file transfer needed);
+        // 400 Invalid body
+        // 401 PIN required/Invalid PIN
+        // 403 = Rejected
+		// 409 = Blocked by another session
+        // 429 = Too many requests
+        // 500 = Unknown error by receiver
+
 		return report;
 	}
 
-	PrepareUploadResult prep = ParsePrepareUploadResponse(resp.body);
+	PrepareUploadResult prep = ParsePrepareUploadResponse(resp.data);
 	report.prepared = true;
 	report.sessionId = prep.sessionId;
 
 	// Calcola il totale dei byte accettati per il progresso.
 	long long totalBytes = 0;
+    {
+    int idx = 0;
 	for (const auto& f : files) {
-		if (prep.fileTokens.count(f.id))
-			totalBytes += f.size;
+        int i = prep.fileTokens.Find(f);
+		if (i > -1) {
+            FileMetadata* m = *files.AtData(idx);
+            i64 sz =  m->size;
+			totalBytes += sz;
+        }
+        idx++;
 	}
+    }
 
 	// Separa file accettati e rifiutati.
 	struct UploadTask {
