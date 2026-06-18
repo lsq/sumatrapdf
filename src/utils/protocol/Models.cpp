@@ -227,6 +227,7 @@ TempStr BuildPrepareUpload(const DeviceInfo* info,
     return preUploadInfos;
 }
 
+#if 0
 // 根据 StructInfo 中的字段名找到 FieldInfo，写入值
 static void WriteFieldByName(const StructInfo* si, u8* base,
                              const char* fieldName,
@@ -260,6 +261,7 @@ static void WriteFieldByName(const StructInfo* si, u8* base,
         }
     }
 }
+#endif
 
 struct PrepareUploadInfoDeserializer : json::ValueVisitor {
     PrepareUploadResult* out;
@@ -335,6 +337,7 @@ ParsePrepareUploadResponse(const char* body, PrepareUploadResult* out)
 
 
 #if 0
+// For server
 IncomingPrepareUpload
 ParsePrepareUploadRequest(const std::string& body)
 {
