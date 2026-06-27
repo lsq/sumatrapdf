@@ -10,6 +10,15 @@
     <Filter Include="utils">
       <UniqueIdentifier>{169C8510-82B0-ADC1-4B32-5121B705AAF2}</UniqueIdentifier>
     </Filter>
+    <Filter Include="utils\client">
+      <UniqueIdentifier>{84EB0325-704E-93C9-19D4-CB7F05165F4C}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="utils\net">
+      <UniqueIdentifier>{4C5E9DD3-B8C8-514A-0107-03F06DB02F9F}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="utils\protocol">
+      <UniqueIdentifier>{97CEF051-839C-E457-6C30-557E589DC0BC}</UniqueIdentifier>
+    </Filter>
     <Filter Include="utils\tests">
       <UniqueIdentifier>{78BFDA30-E474-5326-6D69-4DFDD91D4A2A}</UniqueIdentifier>
     </Filter>
@@ -63,7 +72,13 @@
     <ClInclude Include="..\src\utils\HtmlPullParser.h">
       <Filter>utils</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\utils\HttpUtil.h">
+      <Filter>utils</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\utils\JsonParser.h">
+      <Filter>utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\JsonUtil.h">
       <Filter>utils</Filter>
     </ClInclude>
     <ClInclude Include="..\src\utils\Log.h">
@@ -96,6 +111,9 @@
     <ClInclude Include="..\src\utils\TempAllocator.h">
       <Filter>utils</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\utils\ThreadUtil.h">
+      <Filter>utils</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\utils\TrivialHtmlParser.h">
       <Filter>utils</Filter>
     </ClInclude>
@@ -110,6 +128,27 @@
     </ClInclude>
     <ClInclude Include="..\src\utils\WinUtil.h">
       <Filter>utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\client\FileSource.h">
+      <Filter>utils\client</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\client\UploadSession.h">
+      <Filter>utils\client</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\net\HttpClient.h">
+      <Filter>utils\net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\net\IHttpClient.h">
+      <Filter>utils\net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\protocol\Constants.h">
+      <Filter>utils\protocol</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\protocol\Fingerprint.h">
+      <Filter>utils\protocol</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\protocol\Models.h">
+      <Filter>utils\protocol</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -184,7 +223,13 @@
     <ClCompile Include="..\src\utils\HtmlPullParser.cpp">
       <Filter>utils</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\utils\HttpUtil.cpp">
+      <Filter>utils</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\utils\JsonParser.cpp">
+      <Filter>utils</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\utils\JsonUtil.cpp">
       <Filter>utils</Filter>
     </ClCompile>
     <ClCompile Include="..\src\utils\Log.cpp">
@@ -214,6 +259,9 @@
     <ClCompile Include="..\src\utils\TempAllocator.cpp">
       <Filter>utils</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\utils\ThreadUtil.cpp">
+      <Filter>utils</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\utils\TrivialHtmlParser.cpp">
       <Filter>utils</Filter>
     </ClCompile>
@@ -225,6 +273,21 @@
     </ClCompile>
     <ClCompile Include="..\src\utils\WinUtil.cpp">
       <Filter>utils</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\utils\client\FileSource.cpp">
+      <Filter>utils\client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\utils\client\UploadSession.cpp">
+      <Filter>utils\client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\utils\net\HttpClient.cpp">
+      <Filter>utils\net</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\utils\protocol\Fingerprint.cpp">
+      <Filter>utils\protocol</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\utils\protocol\Models.cpp">
+      <Filter>utils\protocol</Filter>
     </ClCompile>
     <ClCompile Include="..\src\utils\tests\BaseUtil_ut.cpp">
       <Filter>utils\tests</Filter>
@@ -254,6 +317,7 @@
       <Filter>utils\tests</Filter>
     </ClCompile>
     <ClCompile Include="..\src\utils\tests\RefHover_ut.cpp">
+    <ClCompile Include="..\src\utils\tests\LocalSend_ut.cpp">
       <Filter>utils\tests</Filter>
     </ClCompile>
     <ClCompile Include="..\src\utils\tests\SettingsUtil_ut.cpp">

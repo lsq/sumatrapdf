@@ -1010,7 +1010,7 @@ struct FileListRow {
     Rect rcPath;     // 第一列：文件路径
     Rect rcPage;     // 第二列：当前页数
     Rect rcPercent;  // 第三列：阅读百分比
-    Rect rcFileSize;  // 第四列：文件大小
+    Rect rcFileSize; // 第四列：文件大小
     FileState* fs = nullptr;
     StaticLink* sl = nullptr;
 };
@@ -1035,13 +1035,13 @@ struct HomePageLayout {
     Vec<ThumbnailLayout> thumbnails; // info for each thumbnail
     Vec<FileListRow> rows;
     // 上传进度区域（仅当 win->uploadProgress != nullptr 时有效）
-    Rect rcUploadPanel;    // 上传进度区域
+    Rect rcUploadPanel; // 上传进度区域
     bool hasUpload = false;
-    int uploadPanelH = 0; // 面板高度（用于压缩缩略图区域）
-    Rect rcCloseUpload;   // 关闭上传面板按钮
-    int totalContentDy = 0;          // total height of all thumbnail rows
-    int thumbsVisibleDy = 0;         // visible height for thumbnails area
-    Rect rcThumbsArea;               // clip rect for thumbnails
+    int uploadPanelH = 0;    // 面板高度（用于压缩缩略图区域）
+    Rect rcCloseUpload;      // 关闭上传面板按钮
+    int totalContentDy = 0;  // total height of all thumbnail rows
+    int thumbsVisibleDy = 0; // visible height for thumbnails area
+    Rect rcThumbsArea;       // clip rect for thumbnails
 
     // search filter
     StrVec filterWords;
@@ -1139,23 +1139,23 @@ void LayoutHomePage(HomePageLayout& l) {
 
     Vec<FileState*> allFileStates;
     if (gGlobalPrefs->homePageListView && l.win->homePageSelectedFiles.Size() > 0) {
-    // 用选择的文件替代历史记录
-    StrVec files;
-    SliceFirst(l.win->homePageSelectedFiles, files);
-    StrVec expandedFiles;
-    ExpandFilesAndFolders(files, expandedFiles);
-    for (char* path : expandedFiles) {
-        // 先从历史记录中查找已有的 FileState
-        // FileState* fs = gFileHistory.FindByPath(path);
-        // if (!fs) {
+        // 用选择的文件替代历史记录
+        StrVec files;
+        SliceFirst(l.win->homePageSelectedFiles, files);
+        StrVec expandedFiles;
+        ExpandFilesAndFolders(files, expandedFiles);
+        for (char* path : expandedFiles) {
+            // 先从历史记录中查找已有的 FileState
+            // FileState* fs = gFileHistory.FindByPath(path);
+            // if (!fs) {
             // 没有历史记录，创建临时 FileState（只有路径）
             // fs = New DisplayState(path);  // 或
-            FileState* fs = new FileState{}; //fs->filePath = str::Dup(path);
+            FileState* fs = new FileState{}; // fs->filePath = str::Dup(path);
             SetFileStatePath(fs, path);
-        // }
-        allFileStates.Append(fs);
-    }
-    } else if(gGlobalPrefs->homePageSortByFrequentlyRead) {
+            // }
+            allFileStates.Append(fs);
+        }
+    } else if (gGlobalPrefs->homePageSortByFrequentlyRead) {
         gFileHistory.GetFrequencyOrder(allFileStates);
     } else {
         gFileHistory.GetRecentlyOpenedOrder(allFileStates);
@@ -1342,24 +1342,26 @@ void LayoutHomePage(HomePageLayout& l) {
     UploadProgress* up = win->uploadProgress;
     if (up) {
         HFONT fontUpload = CreateSimpleFont(hdc, "MS Shell Dlg", 13);
-        int rowH    = DpiScale(hdc, 20);
+        int rowH = DpiScale(hdc, 20);
         int padding = DpiScale(hdc, 8);
-        int nFiles  = up->fileStates.Size();
+        int nFiles = up->fileStates.Size();
         // 标题行 + 总进度条 + 每个文件一行
         uploadPanelH = padding + rowH + DpiScale(hdc, 6) + rowH + (nFiles * (rowH + DpiScale(hdc, 2))) + padding;
-        l.rcUploadPanel = { rc.x + kThumbsMarginLeft, headerBottomY + DpiScale(hdc, 8), rc.dx - kThumbsMarginLeft - kThumbsMarginRight, uploadPanelH};
-        l.uploadPanelH  = uploadPanelH;
+        l.rcUploadPanel = {rc.x + kThumbsMarginLeft, headerBottomY + DpiScale(hdc, 8),
+                           rc.dx - kThumbsMarginLeft - kThumbsMarginRight, uploadPanelH};
+        l.uploadPanelH = uploadPanelH;
         l.hasUpload = true;
 
         // 关闭按钮: 右上角20x20
         int btnSz = DpiScale(hdc, 20);
-        l.rcCloseUpload = Rect(l.rcUploadPanel.x + l.rcUploadPanel.dx - btnSz - DpiScale(hdc, 4), l.rcUploadPanel.y + DpiScale(hdc, 2), btnSz, btnSz);
+        l.rcCloseUpload = Rect(l.rcUploadPanel.x + l.rcUploadPanel.dx - btnSz - DpiScale(hdc, 4),
+                               l.rcUploadPanel.y + DpiScale(hdc, 2), btnSz, btnSz);
         auto csl = new StaticLink(l.rcCloseUpload, kLinkCloseUpload, nullptr);
         win->staticLinks.Append(csl);
     }
     // --- Step 3: middle area for thumbnails/list ---
     // content starts directly after headerBottomY (which includes kSearchThumbnailsGapY)
-    int thumbsTopY = headerBottomY;
+    int thumbsTopY = headerBottomY + uploadPanelH + DpiScale(hdc, 8);
     int thumbsBottomY = rc.dy - tipHeight - kThumbsMiddleMargin;
     int thumbsVisibleDy = std::max(0, thumbsBottomY - thumbsTopY);
 
@@ -1503,40 +1505,39 @@ void LayoutHomePage(HomePageLayout& l) {
     }
 
     } else {
+        // 固定列宽
+        int colGap = DpiScale(hdc, 8);       // 列间距
+        int rightMargin = DpiScale(hdc, 80); // 右边距
+        int col2Dx = DpiScale(hdc, 100);     // 页数列固定宽度
+        int col3Dx = DpiScale(hdc, 80);      // 百分比列固定宽度
+        int col4Dx = DpiScale(hdc, 90);      // 文件大小列固定宽度
 
-    // 固定列宽
-    int colGap      = DpiScale(hdc, 8);   // 列间距
-    int rightMargin = DpiScale(hdc, 80);  // 右边距
-    int col2Dx      = DpiScale(hdc, 100); // 页数列固定宽度
-    int col3Dx      = DpiScale(hdc, 80);  // 百分比列固定宽度
-    int col4Dx      = DpiScale(hdc, 90);  // 文件大小列固定宽度
+        int rowH = DpiScale(hdc, 22);
+        int rowY = thumbsTopY - scrollY;
+        int col1X = thumbsStartX;
+        int totalW = rc.dx - col1X - rightMargin; // 总可用宽度
+        int col1Dx = totalW - col2Dx - col3Dx - col4Dx - (3 * colGap);
+        if (col1Dx < DpiScale(hdc, 100)) {
+            col1Dx = DpiScale(hdc, 100); // 防止路径列过窄
+        }
 
-    int rowH = DpiScale(hdc, 22);
-    int rowY = thumbsTopY - scrollY;
-    int col1X = thumbsStartX;
-    int totalW = rc.dx - col1X - rightMargin; // 总可用宽度
-    int col1Dx = totalW - col2Dx - col3Dx - col4Dx - (3 * colGap);
-    if (col1Dx < DpiScale(hdc, 100)) {
-        col1Dx = DpiScale(hdc, 100); // 防止路径列过窄
-    }
+        int col2X = col1X + col1Dx + colGap; // 路径列宽度
+        int col3X = col2X + col2Dx + colGap; // 页数列宽度
+        int col4X = col3X + col3Dx + colGap; // 文件大小列宽度
 
-    int col2X = col1X + col1Dx + colGap;  // 路径列宽度
-    int col3X = col2X + col2Dx + colGap;   // 页数列宽度
-    int col4X = col3X + col3Dx + colGap;   // 文件大小列宽度
-
-    for (FileState* fs : fileStates) {
-        FileListRow& row = *l.rows.AppendBlanks(1);
-        row.fs = fs;
-        row.rcPath     = {col1X, rowY, col1Dx, rowH};
-        row.rcPage     = {col2X, rowY, col2Dx, rowH};
-        row.rcPercent  = {col3X, rowY, col3Dx, rowH};
-        row.rcFileSize = {col4X, rowY, col4Dx, rowH};
-        row.rcRow      = {col1X, rowY, rc.dx - col1X - rightMargin, rowH};
-        // StaticLink 绑定文件路径
-        row.sl = new StaticLink(row.rcRow, fs->filePath, fs->filePath);
-        win->staticLinks.Append(row.sl);
-        rowY += rowH + DpiScale(hdc, 2);
-    }
+        for (FileState* fs : fileStates) {
+            FileListRow& row = *l.rows.AppendBlanks(1);
+            row.fs = fs;
+            row.rcPath = {col1X, rowY, col1Dx, rowH};
+            row.rcPage = {col2X, rowY, col2Dx, rowH};
+            row.rcPercent = {col3X, rowY, col3Dx, rowH};
+            row.rcFileSize = {col4X, rowY, col4Dx, rowH};
+            row.rcRow = {col1X, rowY, rc.dx - col1X - rightMargin, rowH};
+            // StaticLink 绑定文件路径
+            row.sl = new StaticLink(row.rcRow, fs->filePath, fs->filePath);
+            win->staticLinks.Append(row.sl);
+            rowY += rowH + DpiScale(hdc, 2);
+        }
     }
     // layout tip at the bottom
     if (tip) {
@@ -1904,11 +1905,11 @@ static void DrawHomePageLayout(HomePageLayout& l) {
     UploadProgress* up = l.win->uploadProgress;
     if (up && l.uploadPanelH > 0) {
         HFONT fontUp = CreateSimpleFont(hdc, "MS Shell Dlg", 13);
-        int rowH    = DpiScale(hdc, 20);
+        int rowH = DpiScale(hdc, 20);
         int padding = DpiScale(hdc, 8);
-        int barH    = DpiScale(hdc, 8);
-        int colGap  = DpiScale(hdc, 8);
-        int rightM  = DpiScale(hdc, 20);
+        int barH = DpiScale(hdc, 8);
+        int colGap = DpiScale(hdc, 8);
+        int rightM = DpiScale(hdc, 20);
         RECT rcPanl = ToRECT(l.rcUploadPanel);
 
         // 面板背景
@@ -1932,30 +1933,27 @@ static void DrawHomePageLayout(HomePageLayout& l) {
         int y = l.rcUploadPanel.y + padding;
         int panelW = l.rcUploadPanel.dx - 3 * padding;
 
-        SetTextColor(hdc, ThemeWindowTextColor());
-        SelectObject(hdc, fontUp);
+        // SetTextColor(hdc, ThemeWindowTextColor());
+        // SelectObject(hdc, fontUp);
 
         // --- 总进度标题行 ---
-        int nTotal     = up->nTotal;
+        int nTotal = up->nTotal;
         int nCompleted = AtomicIntGet(&up->nCompleted);
-        i64 totalBytes    = up->totalBytes;
+        i64 totalBytes = up->totalBytes;
         i64 uploadedBytes = up->uploadedBytes.Load();
         int globalPct = (totalBytes > 0) ? (int)(uploadedBytes * 100 / totalBytes) : 0;
 
-        TempStr titleStr = str::FormatTemp("Uploading: %d / %d files  (%d%%, %s / %s)",
-                                           nCompleted, nTotal, globalPct,
-                                           FormatSizeShortTransTemp(uploadedBytes),
-                                           FormatSizeShortTransTemp(totalBytes)
-                                           );
+        TempStr titleStr =
+            str::FormatTemp("Uploading: %d / %d files  (%d%%, %s / %s)", nCompleted, nTotal, globalPct,
+                            FormatSizeShortTransTemp(uploadedBytes), FormatSizeShortTransTemp(totalBytes));
         Rect rcTitle = {x, y, panelW - DpiScale(hdc, 60), rowH};
         HdcDrawText(hdc, titleStr, rcTitle, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX, fontUp);
         // 关闭按钮 ×
-        HFONT fontBtn = CreateSimpleFont(hdc, "Arial", 14);
+        HFONT fontBtn = CreateSimpleFont(hdc, "MS Shell Dlg", 14);
         SelectObject(hdc, fontBtn);
         RECT rcBtn = ToRECT(l.rcCloseUpload);
-        DrawTextW(hdc, L"\u00D7", -1, &rcBtn,
-                  DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-        DeleteObject(fontBtn);
+        DrawTextW(hdc, L"\u00D7", -1, &rcBtn, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        // DeleteObject(fontBtn);
 
         y += rowH + DpiScale(hdc, 4);
 
@@ -1964,19 +1962,19 @@ static void DrawHomePageLayout(HomePageLayout& l) {
         FillRect(hdc, rcBarBg, ThemeControlBackgroundColor());
         if (globalPct > 0) {
             Rect rcBarFg = {x, y, panelW * globalPct / 100, barH};
-            FillRect(hdc, rcBarFg, RGB(0, 120, 215));  // Windows 蓝
+            FillRect(hdc, rcBarFg, RGB(0, 120, 215)); // Windows 蓝
         }
         y += barH + DpiScale(hdc, 6);
 
         // --- 每个文件的进度行 ---
-        int pctW      = DpiScale(hdc, 80);                    // 百分比列
-        int prgW      = DpiScale(hdc, 100);                   // 进度条列
-        int sizeW     = DpiScale(hdc, 200);                    // 已上传/总大小列
+        int pctW = DpiScale(hdc, 80);                              // 百分比列
+        int prgW = DpiScale(hdc, 100);                             // 进度条列
+        int sizeW = DpiScale(hdc, 200);                            // 已上传/总大小列
         int fileNameW = panelW - prgW - pctW - sizeW - 3 * colGap; // 文件名列
-        int col1X   = x;
-        int col2X   = col1X + fileNameW + colGap;
-        int col3X   = col2X + prgW + colGap;
-        int col4X   = col3X + pctW + colGap;
+        int col1X = x;
+        int col2X = col1X + fileNameW + colGap;
+        int col3X = col2X + prgW + colGap;
+        int col4X = col3X + pctW + colGap;
 
         for (int i = 0; i < up->fileStates.Size(); i++) {
             const FileUploadState* fs = up->fileStates[i];
@@ -1985,13 +1983,12 @@ static void DrawHomePageLayout(HomePageLayout& l) {
             // 文件名（取 basename）
             TempStr baseName = path::GetBaseNameTemp(fs->filePath);
             Rect rcName = {x, y, fileNameW, rowH};
-            HdcDrawText(hdc, baseName, rcName,
-                        DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX, fontUp);
+            HdcDrawText(hdc, baseName, rcName, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX, fontUp);
 
             // 第二列：进度条
             Rect rcBar = {col2X, y + DpiScale(hdc, 4), prgW, rowH - DpiScale(hdc, 8)};
-            COLORREF barBg  = AccentColor(panelBg, 40);
-            COLORREF barFg  = ThemeWindowLinkColor();
+            COLORREF barBg = AccentColor(panelBg, 40);
+            COLORREF barFg = ThemeWindowLinkColor();
             FillRect(hdc, rcBar, barBg);
             if (fs->totalBytes > 0) {
                 int fillW = (int)(rcBar.dx * fs->uploadedBytes.Load() / fs->totalBytes);
@@ -2000,27 +1997,22 @@ static void DrawHomePageLayout(HomePageLayout& l) {
             }
 
             // 百分比
-            int filePct = (fs->totalBytes > 0)
-                ? (int)(fs->uploadedBytes.Load() * 100 / fs->totalBytes) : 0;
-            TempStr pctStr = fs->isDone
-                ? (fs->isFailed ? str::DupTemp("❌FAIL") : str::DupTemp("✅ 完成"))
-                : str::FormatTemp("⏳(%d%%)", filePct);
-            Rect rcPct = { col3X, y, pctW, rowH};
-            HdcDrawText(hdc, pctStr, rcPct,
-                        DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX, fontUp);
+            int filePct = (fs->totalBytes > 0) ? (int)(fs->uploadedBytes.Load() * 100 / fs->totalBytes) : 0;
+            TempStr pctStr = fs->isDone ? (fs->isFailed ? str::DupTemp("❌FAIL") : str::DupTemp("✅ 完成"))
+                                        : str::FormatTemp("⏳(%d%%)", filePct);
+            Rect rcPct = {col3X, y, pctW, rowH};
+            HdcDrawText(hdc, pctStr, rcPct, DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX, fontUp);
 
             // 已上传 / 总大小
-            TempStr sizeStr = str::FormatTemp("%s / %s",
-                FormatSizeShortTransTemp(fs->uploadedBytes.Load()),
-                FormatSizeShortTransTemp(fs->totalBytes));
-            Rect rcSize = { col4X, y, sizeW, rowH};
-            HdcDrawText(hdc, sizeStr, rcSize,
-                        DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX, fontUp);
+            TempStr sizeStr = str::FormatTemp("%s / %s", FormatSizeShortTransTemp(fs->uploadedBytes.Load()),
+                                              FormatSizeShortTransTemp(fs->totalBytes));
+            Rect rcSize = {col4X, y, sizeW, rowH};
+            HdcDrawText(hdc, sizeStr, rcSize, DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX, fontUp);
 
             y += rowH + DpiScale(hdc, 2);
         }
 
-        DeleteObject(fontUp);
+        // DeleteObject(fontUp);
     }
 
     // clip thumbnails to the middle area
@@ -2031,6 +2023,7 @@ static void DrawHomePageLayout(HomePageLayout& l) {
         DeleteObject(thumbsClip);
     }
 
+<<<<<<< HEAD
     if(!gGlobalPrefs->homePageListView) {
     for (const ThumbnailLayout& thumb : l.thumbnails) {
         FileState* fs = thumb.fs;
@@ -2039,18 +2032,54 @@ static void DrawHomePageLayout(HomePageLayout& l) {
             continue;
         }
         const Rect& page = thumb.rcPage;
+||||||| parent of 5255ff4c6 (add localsend client)
+    if(!gGlobalPrefs->homePageListView) {
+    for (const ThumbnailLayout& thumb : l.thumbnails) {
+        FileState* fs = thumb.fs;
+        const Rect& page = thumb.rcPage;
+=======
+    if (!gGlobalPrefs->homePageListView) {
+        for (const ThumbnailLayout& thumb : l.thumbnails) {
+            FileState* fs = thumb.fs;
+            const Rect& page = thumb.rcPage;
+>>>>>>> 5255ff4c6 (add localsend client)
 
-        RenderedBitmap* thumbImg = LoadThumbnail(fs);
-        if (thumbImg) {
-            int savedDC = SaveDC(hdc);
-            HRGN clip = CreateRoundRectRgn(page.x, page.y, page.x + page.dx, page.y + page.dy, 10, 10);
-            ExtSelectClipRgn(hdc, clip, RGN_AND);
-            // note: we used to invert bitmaps in dark theme but that doesn't
-            // make sense for thumbnails
-            thumbImg->Blit(hdc, page);
-            RestoreDC(hdc, savedDC);
-            DeleteObject(clip);
+            RenderedBitmap* thumbImg = LoadThumbnail(fs);
+            if (thumbImg) {
+                int savedDC = SaveDC(hdc);
+                HRGN clip = CreateRoundRectRgn(page.x, page.y, page.x + page.dx, page.y + page.dy, 10, 10);
+                ExtSelectClipRgn(hdc, clip, RGN_AND);
+                // note: we used to invert bitmaps in dark theme but that doesn't
+                // make sense for thumbnails
+                thumbImg->Blit(hdc, page);
+                RestoreDC(hdc, savedDC);
+                DeleteObject(clip);
+            }
+            RoundRect(hdc, page.x, page.y, page.x + page.dx, page.y + page.dy, 10, 10);
+
+            const Rect& rect = thumb.rcText;
+            char* path = fs->filePath;
+            TempStr fileName = path::GetBaseNameTemp(path);
+            UINT fmt = DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX | (isRtl ? DT_RIGHT : DT_LEFT);
+
+            SelectObject(hdc, fontText);
+            {
+                RECT rcText = {rect.x, rect.y, rect.x + rect.dx, rect.y + rect.dy};
+                DrawMaybeHighlightedTextArgs hlArgs(l.filterWords, l.highlighted);
+                hlArgs.hdc = hdc;
+                hlArgs.rc = rcText;
+                hlArgs.text = fileName;
+                hlArgs.colBg = backgroundColor;
+                hlArgs.isRtl = isRtl;
+                hlArgs.drawFmt = fmt;
+                DrawMaybeHighlightedText(hlArgs);
+            }
+
+            GetFileStateIcon(fs);
+            int x = isRtl ? page.x + page.dx - DpiScale(hdc, 16) : page.x;
+            ImageList_Draw(fs->himl, fs->iconIdx, hdc, x, rect.y, ILD_TRANSPARENT);
         }
+<<<<<<< HEAD
         RoundRect(hdc, page.x, page.y, page.x + page.dx, page.y + page.dy, 10, 10);
 
         const Rect& rect = thumb.rcText;
@@ -2069,7 +2098,35 @@ static void DrawHomePageLayout(HomePageLayout& l) {
         int x = isRtl ? page.x + page.dx - DpiScale(hdc, 16) : page.x;
         ImageList_Draw(fs->himl, fs->iconIdx, hdc, x, rect.y, ILD_TRANSPARENT);
     }
+||||||| parent of 5255ff4c6 (add localsend client)
+        RoundRect(hdc, page.x, page.y, page.x + page.dx, page.y + page.dy, 10, 10);
+
+        const Rect& rect = thumb.rcText;
+        char* path = fs->filePath;
+        TempStr fileName = path::GetBaseNameTemp(path);
+        UINT fmt = DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX | (isRtl ? DT_RIGHT : DT_LEFT);
+
+        SelectObject(hdc, fontText);
+        {
+            RECT rcText = {rect.x, rect.y, rect.x + rect.dx, rect.y + rect.dy};
+            DrawMaybeHighlightedTextArgs hlArgs(l.filterWords, l.highlighted);
+            hlArgs.hdc = hdc;
+            hlArgs.rc = rcText;
+            hlArgs.text = fileName;
+            hlArgs.colBg = backgroundColor;
+            hlArgs.isRtl = isRtl;
+            hlArgs.drawFmt = fmt;
+            DrawMaybeHighlightedText(hlArgs);
+        }
+
+        GetFileStateIcon(fs);
+        int x = isRtl ? page.x + page.dx - DpiScale(hdc, 16) : page.x;
+        ImageList_Draw(fs->himl, fs->iconIdx, hdc, x, rect.y, ILD_TRANSPARENT);
+    }
+=======
+>>>>>>> 5255ff4c6 (add localsend client)
     } else {
+#if 0
         if (win->homePageSelectedFiles.Size() > 0) {
             UINT rfmt = DT_SINGLELINE | DT_END_ELLIPSIS | DT_VCENTER | DT_NOPREFIX;
             for (const FileListRow& row : l.rows) {
@@ -2100,33 +2157,34 @@ static void DrawHomePageLayout(HomePageLayout& l) {
                 HdcDrawText(hdc, finishStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
             }
         } else {
-            UINT rfmt = DT_SINGLELINE | DT_END_ELLIPSIS | DT_VCENTER | DT_NOPREFIX;
-            for (const FileListRow& row : l.rows) {
-                FileState* fs = row.fs;
-                // 第一列：完整文件路径（带省略号）
-                TempStr fpath = str::FormatTemp("%s", fs->filePath);
-                HdcDrawText(hdc, fpath, row.rcPath, rfmt | DT_LEFT, fontText);
-                // 第二列：当前页 / 总页数
-                TempStr pageStr = str::FormatTemp("%d / %d", fs->pageNo, fs->totalPages);
-                HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
-                // 第三列：阅读百分比
-                // i64 sz = file::GetSize(fs->filePath);
-                // TempStr szStr = (sz >= 0) ? FormatSizeShortTransTemp(sz) : str::DupTemp("—");
-                // TempStr pageStr = str::FormatTemp("%d / %s", fs->pageNo, szStr);
-                // HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
+#endif
+        UINT rfmt = DT_SINGLELINE | DT_END_ELLIPSIS | DT_VCENTER | DT_NOPREFIX;
+        for (const FileListRow& row : l.rows) {
+            FileState* fs = row.fs;
+            // 第一列：完整文件路径（带省略号）
+            TempStr fpath = str::FormatTemp("%s", fs->filePath);
+            HdcDrawText(hdc, fpath, row.rcPath, rfmt | DT_LEFT, fontText);
+            // 第二列：当前页 / 总页数
+            TempStr pageStr = str::FormatTemp("%d / %d", fs->pageNo, fs->totalPages);
+            HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
+            // 第三列：阅读百分比
+            // i64 sz = file::GetSize(fs->filePath);
+            // TempStr szStr = (sz >= 0) ? FormatSizeShortTransTemp(sz) : str::DupTemp("—");
+            // TempStr pageStr = str::FormatTemp("%d / %s", fs->pageNo, szStr);
+            // HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
 
-                int pct = (fs->totalPages > 0) ? (fs->pageNo * 100 / fs->totalPages) : 0;
-                // int pct = (sz > 0) ? (fs->pageNo * 100 / sz) : 0;
-                TempStr pctStr = str::FormatTemp("%d%%", pct);
-                HdcDrawText(hdc, pctStr, row.rcPercent, rfmt | DT_RIGHT, fontText);
-                // 第四列：文件大小
-                i64 sz = file::GetSize(fs->filePath);
-                TempStr szStr = (sz >= 0) ? FormatSizeShortTransTemp(sz) : str::DupTemp("—");
-                HdcDrawText(hdc, szStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
-                // TempStr finishStr = (fs->pageNo == sz) ? str::DupTemp("✅ 完成") : str::DupTemp("⏳ 传输中");
-                // HdcDrawText(hdc, finishStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
-            }
+            int pct = (fs->totalPages > 0) ? (fs->pageNo * 100 / fs->totalPages) : 0;
+            // int pct = (sz > 0) ? (fs->pageNo * 100 / sz) : 0;
+            TempStr pctStr = str::FormatTemp("%d%%", pct);
+            HdcDrawText(hdc, pctStr, row.rcPercent, rfmt | DT_RIGHT, fontText);
+            // 第四列：文件大小
+            i64 sz = file::GetSize(fs->filePath);
+            TempStr szStr = (sz >= 0) ? FormatSizeShortTransTemp(sz) : str::DupTemp("—");
+            HdcDrawText(hdc, szStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
+            // TempStr finishStr = (fs->pageNo == sz) ? str::DupTemp("✅ 完成") : str::DupTemp("⏳ 传输中");
+            // HdcDrawText(hdc, finishStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
         }
+        // }
     }
 
 #if 0

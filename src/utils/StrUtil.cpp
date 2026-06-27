@@ -2691,10 +2691,8 @@ TempStr UrlEncodeTemp(const char* s) {
     StrBuilder out;
     for (const u8* p = (const u8*)s; *p; p++) {
         u8 c = *p;
-        bool isUnreserved = (c >= 'A' && c <= 'Z') ||
-                            (c >= 'a' && c <= 'z') ||
-                            (c >= '0' && c <= '9') ||
-                            c == '-' || c == '_' || c == '.' || c == '~';
+        bool isUnreserved = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ||
+                            c == '_' || c == '.' || c == '~';
         if (isUnreserved) {
             out.AppendChar((char)c);
         } else {

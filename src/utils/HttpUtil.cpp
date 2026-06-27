@@ -275,8 +275,8 @@ Exit:
 void FileReaderThread(FileReaderData* td) {
     // AutoDelete del(td); // 下面已经用delete管理了，不需要了
     WCHAR* pathW = ToWStrTemp(td->filePath);
-    HANDLE hFile = CreateFileW(pathW, GENERIC_READ, FILE_SHARE_READ,
-                               nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    HANDLE hFile =
+        CreateFileW(pathW, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (hFile == INVALID_HANDLE_VALUE) {
         // logf("HttpPostFileStream reader: CreateFileW failed for '%s'\n", td->filePath);
         *td->errorOut = true;
@@ -318,13 +318,9 @@ void FileReaderThread(FileReaderData* td) {
 // -----------------------------------------------------------------------
 // 主函数：流式 POST 文件
 // -----------------------------------------------------------------------
-bool HttpPostFileStream(const char* serverA, int port, const char* urlPathA,
-                        const char* filePath,
-                        int maxQueueChunks,
-                        int chunkSize,
-                        Func1<HttpUploadProgress*>& cbProgress) {
-    logf("HttpPostFileStream: server='%s' port=%d path='%s' file='%s'\n",
-         serverA, port, urlPathA, filePath);
+bool HttpPostFileStream(const char* serverA, int port, const char* urlPathA, const char* filePath, int maxQueueChunks,
+                        int chunkSize, Func1<HttpUploadProgress*>& cbProgress) {
+    logf("HttpPostFileStream: server='%s' port=%d path='%s' file='%s'\n", serverA, port, urlPathA, filePath);
 
     bool ok = false;
     HINTERNET hInet = nullptr, hConn = nullptr, hReq = nullptr;
@@ -347,7 +343,7 @@ bool HttpPostFileStream(const char* serverA, int port, const char* urlPathA,
     RunAsync(fn, "HttpPostFileStreamReader");
 
     // 建立 HTTP 连接
-    WCHAR* server  = ToWStrTemp(serverA);
+    WCHAR* server = ToWStrTemp(serverA);
     WCHAR* urlPath = ToWStrTemp(urlPathA);
 
     hInet = InternetOpenW(kUserAgent, INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
@@ -356,8 +352,7 @@ bool HttpPostFileStream(const char* serverA, int port, const char* urlPathA,
         goto Exit;
     }
 
-    hConn = InternetConnectW(hInet, server, (INTERNET_PORT)port,
-                             nullptr, nullptr, INTERNET_SERVICE_HTTP, 0, 1);
+    hConn = InternetConnectW(hInet, server, (INTERNET_PORT)port, nullptr, nullptr, INTERNET_SERVICE_HTTP, 0, 1);
     if (!hConn) {
         logf("HttpPostFileStream: InternetConnectW failed\n");
         goto Exit;
@@ -375,7 +370,7 @@ bool HttpPostFileStream(const char* serverA, int port, const char* urlPathA,
         goto Exit;
     }
 
-    InternetSetOptionW(hReq, INTERNET_OPTION_SEND_TIMEOUT,    &timeoutMs, sizeof(timeoutMs));
+    InternetSetOptionW(hReq, INTERNET_OPTION_SEND_TIMEOUT, &timeoutMs, sizeof(timeoutMs));
     InternetSetOptionW(hReq, INTERNET_OPTION_RECEIVE_TIMEOUT, &timeoutMs, sizeof(timeoutMs));
 
     // 添加 Content-Length 头
@@ -389,7 +384,7 @@ bool HttpPostFileStream(const char* serverA, int port, const char* urlPathA,
     // 开始流式发送（不在此处传入 body，后续用 InternetWriteFile 写入）
     {
         INTERNET_BUFFERS bufIn{};
-        bufIn.dwStructSize  = sizeof(INTERNET_BUFFERS);
+        bufIn.dwStructSize = sizeof(INTERNET_BUFFERS);
         bufIn.dwBufferTotal = (DWORD)fileSize;
         if (!HttpSendRequestExW(hReq, &bufIn, nullptr, 0, 0)) {
             logf("HttpPostFileStream: HttpSendRequestExW failed\n");
@@ -437,24 +432,23 @@ bool HttpPostFileStream(const char* serverA, int port, const char* urlPathA,
         goto Exit;
     }
 
-    HttpQueryInfoW(hReq, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
-                   &respCode, &respCodeSize, nullptr);
+    HttpQueryInfoW(hReq, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &respCode, &respCodeSize, nullptr);
     logf("HttpPostFileStream: response code %d\n", (int)respCode);
     ok = (respCode >= 200 && respCode < 300);
 
 Exit:
-    if (hReq)  InternetCloseHandle(hReq);
+    if (hReq) InternetCloseHandle(hReq);
     if (hConn) InternetCloseHandle(hConn);
     if (hInet) InternetCloseHandle(hInet);
     return ok;
 }
 
 struct UploadWorkerCtx {
-    StrQueue*       queue;
-    const char*     serverA;
-    int             port;
-    const char*     urlA;
-    int             chunkSize;
+    StrQueue* queue;
+    const char* serverA;
+    int port;
+    const char* urlA;
+    int chunkSize;
     UploadProgress* progress;
 };
 
@@ -466,7 +460,7 @@ static void UploadWorkerThread(UploadWorkerCtx* ctx) {
             break;
         }
         if (ctx->queue->IsSentinel(path)) {
-        //     SetEvent(ctx->queue->hEvent); // 传递 sentinel 给下一个线程
+            //     SetEvent(ctx->queue->hEvent); // 传递 sentinel 给下一个线程
             break;
         }
 
@@ -487,26 +481,26 @@ static void UploadWorkerThread(UploadWorkerCtx* ctx) {
 
         // 构造单文件进度回调：每上传一块，更新 fstate 和全局 uploadedBytes
         PerChunkCbArgs cbArgs{fstate, ctx->progress};
-        auto perChunkCb = MkFunc1(+[](PerChunkCbArgs *args, HttpUploadProgress* p) {
-            FileUploadState* fs = args->fstate;
-            UploadProgress*  gp = args->gProgress;
+        auto perChunkCb = MkFunc1(
+            +[](PerChunkCbArgs* args, HttpUploadProgress* p) {
+                FileUploadState* fs = args->fstate;
+                UploadProgress* gp = args->gProgress;
 
-            // 本次新增字节数
-            i64 delta = p->nUploaded - fs->uploadedBytes.Load();
-            if (delta > 0) {
-                fs->uploadedBytes.Add(delta);
-                gp->uploadedBytes.Add(delta);
-                // 触发全局进度回调
-                gp->cbProgress.Call(gp);
-            }
-        }, &cbArgs);
+                // 本次新增字节数
+                i64 delta = p->nUploaded - fs->uploadedBytes.Load();
+                if (delta > 0) {
+                    fs->uploadedBytes.Add(delta);
+                    gp->uploadedBytes.Add(delta);
+                    // 触发全局进度回调
+                    gp->cbProgress.Call(gp);
+                }
+            },
+            &cbArgs);
 
-        bool ok = HttpPostFileStream(
-            ctx->serverA, ctx->port, ctx->urlA,
-            path, 4, ctx->chunkSize, perChunkCb);
+        bool ok = HttpPostFileStream(ctx->serverA, ctx->port, ctx->urlA, path, 4, ctx->chunkSize, perChunkCb);
 
         fstate->isActive = false;
-        fstate->isDone   = true;
+        fstate->isDone = true;
         fstate->isFailed = !ok;
 
         AtomicIntInc(&ctx->progress->nCompleted);
@@ -520,13 +514,8 @@ static void UploadWorkerThread(UploadWorkerCtx* ctx) {
     DestroyTempAllocator();
 }
 
-int HttpPostFilesStreamPool(
-    const char* serverA, int port, const char* urlA,
-    const StrVec& filePaths,
-    int workerCount, int chunkSize,
-    const Func1<UploadProgress*>& cbProgress,
-    StrQueue* stopQueue)
-{
+int HttpPostFilesStreamPool(const char* serverA, int port, const char* urlA, const StrVec& filePaths, int workerCount,
+                            int chunkSize, const Func1<UploadProgress*>& cbProgress, StrQueue* stopQueue) {
     int n = filePaths.Size();
     if (n == 0) {
         return 0;
@@ -539,7 +528,7 @@ int HttpPostFilesStreamPool(
     StrQueue localQueue;
     StrQueue* queue = stopQueue ? stopQueue : &localQueue;
     UploadProgress* progress = new UploadProgress;
-    progress->nTotal     = n;
+    progress->nTotal = n;
     progress->totalBytes = 0;
     progress->cbProgress = cbProgress;
     // 预分配每个文件的状态，并统计总字节数
@@ -548,8 +537,8 @@ int HttpPostFilesStreamPool(
         // FileUploadState& fs = *progress.fileStates.AppendBlanks(1);
         // FileUploadState* fs = progress->fileStates.AppendBlanks(1);
         auto* fs = new FileUploadState();
-        fs->filePath     = filePaths.At(i);
-        fs->totalBytes   = file::GetSize(fs->filePath);
+        fs->filePath = filePaths.At(i);
+        fs->totalBytes = file::GetSize(fs->filePath);
         if (fs->totalBytes > 0) {
             progress->totalBytes += fs->totalBytes;
         }
@@ -559,12 +548,12 @@ int HttpPostFilesStreamPool(
     // ... 启动线程池、生产者写队列、等待完成（同前）...
     // 启动固定数量的工作线程
     UploadWorkerCtx ctx{};
-    ctx.queue     = queue;
-    ctx.serverA   = serverA;
-    ctx.port      = port;
-    ctx.urlA      = urlA;
+    ctx.queue = queue;
+    ctx.serverA = serverA;
+    ctx.port = port;
+    ctx.urlA = urlA;
     ctx.chunkSize = chunkSize;
-    ctx.progress  = progress;
+    ctx.progress = progress;
 
     Vec<HANDLE> hThreads;
     for (int i = 0; i < workerCount; i++) {
@@ -595,7 +584,6 @@ int HttpPostFilesStreamPool(
 
     return (int)progress->nFailed;
 }
-
 
 /* 调用
 HttpPostFilesStreamPool(server, 443, "/api/upload", files, 4, 64*1024,

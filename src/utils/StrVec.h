@@ -106,6 +106,7 @@ void Sort(StrVec* v, StrLessFunc lessFn = StrLess);
 void SortIndex(StrVec* v, StrLessFunc lessFn = StrLess);
 void SortNoCase(StrVec*);
 void SortNatural(StrVec*);
+void SliceFirst(const StrVec& str, StrVec& result);
 
 int Split(StrVec* v, const char* s, const char* separator, bool collapse = false, int max = -1);
 char* Join(StrVec* v, const char* sep = nullptr);

@@ -5,15 +5,14 @@
 #ifndef _LOCALSEND_FILE_SOURCE_H
 #define _LOCALSEND_FILE_SOURCE_H
 
-
 #include "utils/protocol/Models.h"
 
 namespace LocalSend {
 
 // Costruisce i metadati per il file in 'localPath' con id assegnato.
 // Ritorna false se il file non e' leggibile o non e' un file regolare.
-bool BuildFileMetadata(const char* localPath, const char* id,
-	FileMetadata* out);
+bool BuildFileMetadata(char* localPath, char* destPath, char* id, FileMetadata* out);
+bool BuildFileMetadata(char* localPath, char* id, FileMetadata* out);
 
 // MIME indovinato dall'estensione, fallback application/octet-stream.
 const char* GuessMimeType(const char* fileName);

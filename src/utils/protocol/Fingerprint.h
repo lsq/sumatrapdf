@@ -3,7 +3,6 @@
 #ifndef _LOCALSEND_FINGERPRINT_H
 #define _LOCALSEND_FINGERPRINT_H
 
-
 namespace LocalSend {
 
 // Genera una nuova stringa casuale esadecimale.

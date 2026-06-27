@@ -524,6 +524,8 @@ struct GlobalPrefs {
     bool rememberOpenedFiles;
     // socket ip address
     char* remoteIp;
+    // if true, we use localsend client to send files
+    bool localSend;
     // if true, we store display settings for each document separately
     // (i.e. everything after UseDefaultState in FileStates)
     bool rememberStatePerDocument;
@@ -1052,7 +1054,8 @@ static const FieldInfo gGlobalPrefsFields[] = {
     {offsetof(GlobalPrefs, homePageListView), SettingType::Bool, false},
     {offsetof(GlobalPrefs, reloadModifiedDocuments), SettingType::Bool, true},
     {offsetof(GlobalPrefs, rememberOpenedFiles), SettingType::Bool, true},
-    {offsetof(GlobalPrefs, remoteIp), SettingType::String, 0},
+    {offsetof(GlobalPrefs, remoteIp), SettingType::String, (intptr_t)"localhost"},
+    {offsetof(GlobalPrefs, localSend), SettingType::Bool, true},
     {offsetof(GlobalPrefs, rememberStatePerDocument), SettingType::Bool, true},
     {offsetof(GlobalPrefs, restoreSession), SettingType::Bool, true},
     {offsetof(GlobalPrefs, reuseInstance), SettingType::Bool, true},
@@ -1147,10 +1150,10 @@ static const FieldInfo gGlobalPrefsFields[] = {
     {(size_t)-1, SettingType::Comment, (intptr_t)"Settings below are not recognized by the current version"},
 };
 static const StructInfo gGlobalPrefsInfo = {
-    sizeof(GlobalPrefs), 112, gGlobalPrefsFields,
+    sizeof(GlobalPrefs), 113, gGlobalPrefsFields,
     "\0\0CheckForUpdates\0CustomScreenDPI\0DefaultDisplayMode\0DefaultZoom\0DisableJavaScript\0AllowExternalImages\0Ena"
     "bleTeXEnhancements\0EscToExit\0FullPathInTitle\0InverseSearchCmdLine\0LazyLoading\0MainWindowBackground\0NoHomeTab"
-    "\0HomePageSortByFrequentlyRead\0HomePageShowList\0HomePageListView\0ReloadModifiedDocuments\0RememberOpenedFiles\0RemoteIp\0RememberStatePerDo"
+    "\0HomePageSortByFrequentlyRead\0HomePageShowList\0HomePageListView\0ReloadModifiedDocuments\0RememberOpenedFiles\0RemoteIp\0LocalSend\0RememberStatePerDo"
     "cument\0RestoreSession\0ReuseInstance\0ShowMenubar\0ShowMenubarWithTabs\0ShowTips\0CustomColors\0ShowToolbar\0Tool"
     "bar\0ToolbarPosition\0SearchUIFloating\0ShowFavorites\0ShowToc\0ShowLinks\0ShowStartPage\0SidebarDx\0Scrollbars\0S"
     "crollbarInSinglePage\0SmoothScroll\0DjvuEngine\0CitationHoverDelay\0ReadAloudVoiceId\0FastScrollOverScrollbar\0Pre"

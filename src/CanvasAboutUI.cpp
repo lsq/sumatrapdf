@@ -76,12 +76,15 @@ static void OnMouseMoveAbout(MainWindow* win, HWND hwnd, int x, int y) {
     tme.dwFlags = TME_LEAVE;
     tme.hwndTrack = hwnd;
     TrackMouseEvent(&tme);
-struct CloseUploadData { MainWindow* win; };
+}
+struct CloseUploadData {
+    MainWindow* win;
+};
 static void OnUploadFinished(CloseUploadData* d) {
     AutoDelete del(d);
     if (!IsMainWindowValid(d->win)) return;
     if (!d->win->uploadProgress) return;
-    delete(d->win->uploadProgress);
+    delete (d->win->uploadProgress);
     d->win->uploadProgress = nullptr;
     d->win->RedrawAll(false);
 }

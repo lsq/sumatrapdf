@@ -890,14 +890,9 @@
     <ClInclude Include="..\src\utils\HtmlParserLookup.h" />
     <ClInclude Include="..\src\utils\HtmlPrettyPrint.h" />
     <ClInclude Include="..\src\utils\HtmlPullParser.h" />
+    <ClInclude Include="..\src\utils\HttpUtil.h" />
     <ClInclude Include="..\src\utils\JsonParser.h" />
     <ClInclude Include="..\src\utils\JsonUtil.h" />
-    <ClInclude Include="..\src\utils\protocol\Constants.h" />
-    <ClInclude Include="..\src\utils\protocol\Models.h" />
-    <ClInclude Include="..\src\utils\protocol\Fingerprint.h" />
-    <ClInclude Include="..\src\utils\HttpUtil.h" />
-    <ClInclude Include="..\src\utils\net\IHttpClient.h" />
-    <ClInclude Include="..\src\utils\net\HttpClient.h" />
     <ClInclude Include="..\src\utils\Log.h" />
     <ClInclude Include="..\src\utils\Scoped.h" />
     <ClInclude Include="..\src\utils\SettingsUtil.h" />
@@ -908,12 +903,19 @@
     <ClInclude Include="..\src\utils\StrVec.h" />
     <ClInclude Include="..\src\utils\StrconvUtil.h" />
     <ClInclude Include="..\src\utils\TempAllocator.h" />
+    <ClInclude Include="..\src\utils\ThreadUtil.h" />
     <ClInclude Include="..\src\utils\TrivialHtmlParser.h" />
     <ClInclude Include="..\src\utils\UtAssert.h" />
     <ClInclude Include="..\src\utils\Vec.h" />
     <ClInclude Include="..\src\utils\WinDynCalls.h" />
     <ClInclude Include="..\src\utils\WinUtil.h" />
-    <ClCompile Include="..\src\utils\ThreadUtil.h" />
+    <ClInclude Include="..\src\utils\client\FileSource.h" />
+    <ClInclude Include="..\src\utils\client\UploadSession.h" />
+    <ClInclude Include="..\src\utils\net\HttpClient.h" />
+    <ClInclude Include="..\src\utils\net\IHttpClient.h" />
+    <ClInclude Include="..\src\utils\protocol\Constants.h" />
+    <ClInclude Include="..\src\utils\protocol\Fingerprint.h" />
+    <ClInclude Include="..\src\utils\protocol\Models.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\Commands.cpp" />
@@ -945,13 +947,9 @@
     <ClCompile Include="..\src\utils\HtmlParserLookup.cpp" />
     <ClCompile Include="..\src\utils\HtmlPrettyPrint.cpp" />
     <ClCompile Include="..\src\utils\HtmlPullParser.cpp" />
+    <ClCompile Include="..\src\utils\HttpUtil.cpp" />
     <ClCompile Include="..\src\utils\JsonParser.cpp" />
     <ClCompile Include="..\src\utils\JsonUtil.cpp" />
-    <ClCompile Include="..\src\utils\client\FileSource.cpp" />
-    <ClCompile Include="..\src\utils\protocol\Fingerprint.cpp" />
-    <ClCompile Include="..\src\utils\protocol\Models.cpp" />
-    <ClCompile Include="..\src\utils\HttpUtil.cpp" />
-    <ClCompile Include="..\src\utils\net\HttpClient.cpp" />
     <ClCompile Include="..\src\utils\Log.cpp">
       <ObjectFileName>$(IntDir)\Log1.obj</ObjectFileName>
     </ClCompile>
@@ -963,11 +961,16 @@
     <ClCompile Include="..\src\utils\StrVec.cpp" />
     <ClCompile Include="..\src\utils\StrconvUtil.cpp" />
     <ClCompile Include="..\src\utils\TempAllocator.cpp" />
+    <ClCompile Include="..\src\utils\ThreadUtil.cpp" />
     <ClCompile Include="..\src\utils\TrivialHtmlParser.cpp" />
     <ClCompile Include="..\src\utils\UtAssert.cpp" />
     <ClCompile Include="..\src\utils\WinDynCalls.cpp" />
     <ClCompile Include="..\src\utils\WinUtil.cpp" />
-    <ClCompile Include="..\src\utils\ThreadUtil.cpp" />
+    <ClCompile Include="..\src\utils\client\FileSource.cpp" />
+    <ClCompile Include="..\src\utils\client\UploadSession.cpp" />
+    <ClCompile Include="..\src\utils\net\HttpClient.cpp" />
+    <ClCompile Include="..\src\utils\protocol\Fingerprint.cpp" />
+    <ClCompile Include="..\src\utils\protocol\Models.cpp" />
     <ClCompile Include="..\src\utils\tests\BaseUtil_ut.cpp" />
     <ClCompile Include="..\src\utils\tests\ByteOrderDecoder_ut.cpp" />
     <ClCompile Include="..\src\utils\tests\CryptoUtil_ut.cpp" />

@@ -951,6 +951,19 @@ function darkmodelib_files()
 end
 
 function utils_files()
+  files_in_dir("src/utils/protocol", {
+    "Constants.h",
+    "Models.*",
+    "Fingerprint.*",
+  })
+  files_in_dir("src/utils/net", {
+    "IHttpClient.h",
+    "HttpClient.*",
+  })
+  files_in_dir("src/utils/client", {
+    "FileSource.*",
+    "UploadSession.*",
+  })
   files_in_dir("src/utils", {
     "ApiHook.*",
     "Archive.*",
@@ -979,7 +992,9 @@ function utils_files()
     "HtmlPrettyPrint.*",
     "HtmlPullParser.*",
     "HttpUtil.*",
+    "JsonUtil.*",
     "JsonParser.*",
+    "LocalSend.*",
     "Log.*",
     "LzmaSimpleArchive.*",
     "RegistryPaths.*",
@@ -1401,6 +1416,19 @@ function efi_files()
 end
 
 function test_util_files()
+  files_in_dir("src/utils/protocol", {
+    "Constants.h",
+    "Models.*",
+    "Fingerprint.*",
+  })
+  files_in_dir("src/utils/net", {
+    "IHttpClient.h",
+    "HttpClient.*",
+  })
+  files_in_dir("src/utils/client", {
+    "FileSource.*",
+    "UploadSession.*",
+  })
   files_in_dir("src/common", {
     "arena.cpp",
     "base.cpp",
@@ -1426,6 +1454,9 @@ function test_util_files()
     "HtmlPrettyPrint.*",
     "HtmlPullParser.*",
     "JsonParser.*",
+    "JsonUtil.*",
+    "HttpUtil.*",
+    "ThreadUtil.*",
     "Log.*",
     "Scoped.*",
     "SettingsUtil.*",

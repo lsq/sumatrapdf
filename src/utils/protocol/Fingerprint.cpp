@@ -7,25 +7,23 @@
 
 namespace LocalSend {
 
-
 // 支持 Windows, macOS, Linux
 #if defined(_WIN32)
-    #include <windows.h>
-    #include <bcrypt.h>
-    #pragma comment(lib, "bcrypt.lib")
+#include <windows.h>
+#include <bcrypt.h>
+#pragma comment(lib, "bcrypt.lib")
 #elif defined(__APPLE__)
-    #include <stdlib.h> // arc4random_buf
+#include <stdlib.h> // arc4random_buf
 #else
-    // Assume POSIX (Linux, BSD, etc.)
-    #include <sys/random.h> // getrandom (Linux >=3.17)
-    #include <errno.h>
+// Assume POSIX (Linux, BSD, etc.)
+#include <sys/random.h> // getrandom (Linux >=3.17)
+#include <errno.h>
 #endif
 
 // 尝试从系统获取加密安全的随机字节
 static int secure_random_bytes(void* buf, size_t len) {
 #if defined(_WIN32)
-    NTSTATUS status = BCryptGenRandom(NULL, (PUCHAR)buf, (ULONG)len,
-                                      BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+    NTSTATUS status = BCryptGenRandom(NULL, (PUCHAR)buf, (ULONG)len, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
     return (status == 0) ? 0 : -1;
 
 #elif defined(__APPLE__)
@@ -45,8 +43,7 @@ static int secure_random_bytes(void* buf, size_t len) {
     }
     if (ret == (ssize_t)len) return 0;
     // fallback below
-
-#endif
+#else
 
     // Fallback: /dev/urandom (POSIX)
     FILE* fp = fopen("/dev/urandom", "rb");
@@ -54,13 +51,14 @@ static int secure_random_bytes(void* buf, size_t len) {
     size_t read = fread(buf, 1, len, fp);
     fclose(fp);
     return (read == len) ? 0 : -1;
+#endif
 }
 
 // 将字节数组转为小写十六进制字符串
 static void bytes_to_hex(const uint8_t* bytes, size_t len, char* hex_out) {
     static const char hex_chars[] = "0123456789abcdef";
     for (size_t i = 0; i < len; i++) {
-        hex_out[i * 2]     = hex_chars[(bytes[i] >> 4) & 0xF];
+        hex_out[i * 2] = hex_chars[(bytes[i] >> 4) & 0xF];
         hex_out[i * 2 + 1] = hex_chars[bytes[i] & 0xF];
     }
     hex_out[len * 2] = '\0';
@@ -68,11 +66,11 @@ static void bytes_to_hex(const uint8_t* bytes, size_t len, char* hex_out) {
 
 // 主函数：生成 64 字符十六进制指纹（对应 32 字节随机数据）
 char* GenerateFingerprint(void) {
-    const size_t raw_len = 32;        // 32 bytes → 64 hex chars
+    const size_t raw_len = 32; // 32 bytes → 64 hex chars
     const size_t hex_len = raw_len * 2;
 
     uint8_t* raw = (uint8_t*)malloc(raw_len);
-    char* hex  = (char*)malloc(hex_len + 1); // +1 for null terminator
+    char* hex = (char*)malloc(hex_len + 1); // +1 for null terminator
 
     if (!raw || !hex) {
         free(raw);
@@ -91,14 +89,13 @@ char* GenerateFingerprint(void) {
     return hex; // 调用者负责 free()
 }
 
-
 // 假设已有此函数（C 风格）
 // extern char* GenerateFingerprint(void);
 
 // 辅助：从 ByteSlice 提取第一行（不含换行符），返回 malloc 分配的 null-terminated 字符串
 static char* extract_first_line(const ByteSlice* bs) {
     if (!bs || !bs->data() || bs->size() == 0) {
-        return NULL;
+        return nullptr;
     }
 
     const char* data = (const char*)bs->data();
@@ -112,7 +109,7 @@ static char* extract_first_line(const ByteSlice* bs) {
 
     // 如果整行为空
     if (line_len == 0) {
-        return NULL;
+        return nullptr;
     }
 
     // char* line = (char*)malloc(line_len + 1);
@@ -121,7 +118,6 @@ static char* extract_first_line(const ByteSlice* bs) {
     // }
     // memcpy(line, data, line_len);
     // line[line_len] = '\0';
-
 
     // 可选：trim trailing \r (for \r\n)
     // if (line_len > 0 && line[line_len - 1] == '\r') {
@@ -135,7 +131,7 @@ static char* extract_first_line(const ByteSlice* bs) {
 // 主函数：加载或创建指纹（Windows + file:: API）
 char* LoadOrCreateFingerprint(const char* path) {
     if (!path) {
-        return NULL;
+        return nullptr;
     }
 
     // Step 1: 尝试读取文件
@@ -152,7 +148,7 @@ char* LoadOrCreateFingerprint(const char* path) {
     // Step 2: 生成新指纹
     char* fp = GenerateFingerprint();
     if (!fp) {
-        return NULL;
+        return nullptr;
     }
 
     // Step 3: 构造 "fp\n" 内容用于写入
@@ -193,7 +189,6 @@ char* LoadOrCreateFingerprint(const char* path) {
 // 		out += hex[dist(gen)];
 // 	return out;
 // }
-
 
 // char*
 // LoadOrCreateFingerprint(const std::string& path)
