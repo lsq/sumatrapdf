@@ -161,7 +161,7 @@ struct AtomicInt64 {
 
     // 默认初始化为 0
     AtomicInt64() : value(0) {}
-    
+
     // 支持显式初始化
     explicit AtomicInt64(LONGLONG v) : value(v) {}
 
@@ -172,20 +172,13 @@ struct AtomicInt64 {
     // ✅ 原子读取（Load）
     // InterlockedCompareExchange64(ptr, 0, 0) 是 Windows 上
     // 对 volatile LONGLONG 做原子读的标准惯用法
-    LONGLONG Load() const {
-        return InterlockedCompareExchange64(
-            const_cast<volatile LONGLONG*>(&value), 0, 0);
-    }
+    LONGLONG Load() const { return InterlockedCompareExchange64(const_cast<volatile LONGLONG*>(&value), 0, 0); }
 
     // ✅ 原子写入（Store）
-    LONGLONG Store(LONGLONG newValue) {
-        return InterlockedExchange64(&value, newValue);
-    }
+    LONGLONG Store(LONGLONG newValue) { return InterlockedExchange64(&value, newValue); }
 
     // ✅ 原子加法，返回加之后的新值
-    LONGLONG Add(LONGLONG delta) {
-        return InterlockedAdd64(&value, delta);
-    }
+    LONGLONG Add(LONGLONG delta) { return InterlockedAdd64(&value, delta); }
 
     // ✅ 原子加法，返回加之前的旧值（某些场景需要）
     LONGLONG FetchAdd(LONGLONG delta) {

@@ -1460,6 +1460,16 @@ cd ../out/rel64_prefast_asan &amp; ..\..\bin\MakeLZSA.exe InstallerData.dat libm
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseAnalyze|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseAnalyze x64_asan|x64'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="..\src\utils\tests\LocalSend_ut.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release x64_asan|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseAnalyze|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseAnalyze|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseAnalyze|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseAnalyze x64_asan|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\src\utils\tests\SettingsUtil_ut.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
@@ -1590,6 +1600,7 @@ cd ../out/rel64_prefast_asan &amp; ..\..\bin\MakeLZSA.exe InstallerData.dat libm
     <None Include="..\cmd\build.ts" />
     <None Include="..\cmd\bun.lock" />
     <None Include="..\cmd\check-access-keys.ts" />
+    <None Include="..\cmd\check-rebase-conflicts.sh" />
     <None Include="..\cmd\clang-tidy.ts" />
     <None Include="..\cmd\clean.ts" />
     <None Include="..\cmd\clear-thumbnail-cache.ts" />
@@ -1697,7 +1708,6 @@ cd ../out/rel64_prefast_asan &amp; ..\..\bin\MakeLZSA.exe InstallerData.dat libm
     <None Include="..\premake5.files.lua" />
     <None Include="..\premake5.lua" />
     <None Include="..\readme.md" />
-    <None Include="..\sumlog.txt" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\src\SumatraPDF.rc" />

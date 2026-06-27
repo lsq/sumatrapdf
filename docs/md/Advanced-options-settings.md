@@ -88,7 +88,10 @@ ReloadModifiedDocuments = true
 RememberOpenedFiles = true
 
 ; socket ip address
-RemoteIp =
+RemoteIp = localhost
+
+; if true, we use localsend client to send files
+LocalSend = true
 
 ; if true, we store display settings for each document separately (i.e.
 ; everything after UseDefaultState in FileStates)

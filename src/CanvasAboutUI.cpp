@@ -78,12 +78,14 @@ static bool IsLink(const char* url) {
     return false;
 }
 
-struct CloseUploadData { MainWindow* win; };
+struct CloseUploadData {
+    MainWindow* win;
+};
 static void OnUploadFinished(CloseUploadData* d) {
     AutoDelete del(d);
     if (!IsMainWindowValid(d->win)) return;
     if (!d->win->uploadProgress) return;
-    delete(d->win->uploadProgress);
+    delete (d->win->uploadProgress);
     d->win->uploadProgress = nullptr;
     d->win->RedrawAll(false);
 }

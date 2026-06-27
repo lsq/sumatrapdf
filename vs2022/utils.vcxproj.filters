@@ -7,6 +7,15 @@
     <Filter Include="utils">
       <UniqueIdentifier>{169C8510-82B0-ADC1-4B32-5121B705AAF2}</UniqueIdentifier>
     </Filter>
+    <Filter Include="utils\client">
+      <UniqueIdentifier>{84EB0325-704E-93C9-19D4-CB7F05165F4C}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="utils\net">
+      <UniqueIdentifier>{4C5E9DD3-B8C8-514A-0107-03F06DB02F9F}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="utils\protocol">
+      <UniqueIdentifier>{97CEF051-839C-E457-6C30-557E589DC0BC}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\common\common.h">
@@ -90,6 +99,12 @@
     <ClInclude Include="..\src\utils\JsonParser.h">
       <Filter>utils</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\utils\JsonUtil.h">
+      <Filter>utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\LocalSend.h">
+      <Filter>utils</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\utils\Log.h">
       <Filter>utils</Filter>
     </ClInclude>
@@ -152,6 +167,27 @@
     </ClInclude>
     <ClInclude Include="..\src\utils\ZipUtil.h">
       <Filter>utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\client\FileSource.h">
+      <Filter>utils\client</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\client\UploadSession.h">
+      <Filter>utils\client</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\net\HttpClient.h">
+      <Filter>utils\net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\net\IHttpClient.h">
+      <Filter>utils\net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\protocol\Constants.h">
+      <Filter>utils\protocol</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\protocol\Fingerprint.h">
+      <Filter>utils\protocol</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\protocol\Models.h">
+      <Filter>utils\protocol</Filter>
     </ClInclude>
     <ClInclude Include="..\src\utils\windrawlib.h">
       <Filter>utils</Filter>
@@ -251,6 +287,12 @@
     <ClCompile Include="..\src\utils\JsonParser.cpp">
       <Filter>utils</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\utils\JsonUtil.cpp">
+      <Filter>utils</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\utils\LocalSend.cpp">
+      <Filter>utils</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\utils\Log.cpp">
       <Filter>utils</Filter>
     </ClCompile>
@@ -304,6 +346,21 @@
     </ClCompile>
     <ClCompile Include="..\src\utils\ZipUtil.cpp">
       <Filter>utils</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\utils\client\FileSource.cpp">
+      <Filter>utils\client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\utils\client\UploadSession.cpp">
+      <Filter>utils\client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\utils\net\HttpClient.cpp">
+      <Filter>utils\net</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\utils\protocol\Fingerprint.cpp">
+      <Filter>utils\protocol</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\utils\protocol\Models.cpp">
+      <Filter>utils\protocol</Filter>
     </ClCompile>
     <ClCompile Include="..\src\utils\windrawlib.cpp">
       <Filter>utils</Filter>

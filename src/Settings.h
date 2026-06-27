@@ -451,6 +451,8 @@ struct GlobalPrefs {
     bool rememberOpenedFiles;
     // socket ip address
     char* remoteIp;
+    // if true, we use localsend client to send files
+    bool localSend;
     // if true, we store display settings for each document separately
     // (i.e. everything after UseDefaultState in FileStates)
     bool rememberStatePerDocument;
@@ -894,7 +896,8 @@ static const FieldInfo gGlobalPrefsFields[] = {
     {offsetof(GlobalPrefs, homePageListView), SettingType::Bool, false},
     {offsetof(GlobalPrefs, reloadModifiedDocuments), SettingType::Bool, true},
     {offsetof(GlobalPrefs, rememberOpenedFiles), SettingType::Bool, true},
-    {offsetof(GlobalPrefs, remoteIp), SettingType::String, 0},
+    {offsetof(GlobalPrefs, remoteIp), SettingType::String, (intptr_t)"localhost"},
+    {offsetof(GlobalPrefs, localSend), SettingType::Bool, true},
     {offsetof(GlobalPrefs, rememberStatePerDocument), SettingType::Bool, true},
     {offsetof(GlobalPrefs, restoreSession), SettingType::Bool, true},
     {offsetof(GlobalPrefs, reuseInstance), SettingType::Bool, true},
@@ -971,17 +974,17 @@ static const FieldInfo gGlobalPrefsFields[] = {
     {(size_t)-1, SettingType::Comment, (intptr_t)"Settings below are not recognized by the current version"},
 };
 static const StructInfo gGlobalPrefsInfo = {
-    sizeof(GlobalPrefs), 92, gGlobalPrefsFields,
+    sizeof(GlobalPrefs), 93, gGlobalPrefsFields,
     "\0\0CheckForUpdates\0CustomScreenDPI\0DefaultDisplayMode\0DefaultZoom\0EnableTeXEnhancements\0EscToExit\0FullPathI"
     "nTitle\0InverseSearchCmdLine\0LazyLoading\0MainWindowBackground\0NoHomeTab\0HomePageSortByFrequentlyRead\0HomePage"
-    "ListView\0ReloadModifiedDocuments\0RememberOpenedFiles\0RemoteIp\0RememberStatePerDocument\0RestoreSession\0ReuseI"
-    "nstance\0ShowMenubar\0ShowMenubarWithTabs\0ShowTips\0CustomColors\0ShowToolbar\0ShowFavorites\0ShowToc\0ShowLinks"
-    "\0ShowStartPage\0SidebarDx\0Scrollbars\0ScrollbarInSinglePage\0SmoothScroll\0FastScrollOverScrollbar\0PreventSleep"
-    "InFullscreen\0TabWidth\0Theme\0TocDy\0ToolbarSize\0TreeFontName\0TreeFontSize\0UIFontSize\0DisableAntiAlias\0UseSy"
-    "sColors\0UseTabs\0TabsMru\0ZoomLevels\0ZoomIncrement\0\0FixedPageUI\0\0EBookUI\0\0ComicBookUI\0\0ImageUI\0\0ChmUI"
-    "\0\0Annotations\0\0ExternalViewers\0\0ForwardSearch\0\0PrinterDefaults\0\0Fullscreen\0\0SelectionHandlers\0\0Short"
-    "cuts\0\0Themes\0\0TabGroups\0\0\0DefaultPasswords\0UiLanguage\0VersionToSkip\0WindowState\0WindowPos\0FileStates\0"
-    "SessionData\0ReopenOnce\0TimeOfLastUpdateCheck\0OpenCountWeek\0PropWinPos\0\0"};
+    "ListView\0ReloadModifiedDocuments\0RememberOpenedFiles\0RemoteIp\0LocalSend\0RememberStatePerDocument\0RestoreSess"
+    "ion\0ReuseInstance\0ShowMenubar\0ShowMenubarWithTabs\0ShowTips\0CustomColors\0ShowToolbar\0ShowFavorites\0ShowToc"
+    "\0ShowLinks\0ShowStartPage\0SidebarDx\0Scrollbars\0ScrollbarInSinglePage\0SmoothScroll\0FastScrollOverScrollbar\0P"
+    "reventSleepInFullscreen\0TabWidth\0Theme\0TocDy\0ToolbarSize\0TreeFontName\0TreeFontSize\0UIFontSize\0DisableAntiA"
+    "lias\0UseSysColors\0UseTabs\0TabsMru\0ZoomLevels\0ZoomIncrement\0\0FixedPageUI\0\0EBookUI\0\0ComicBookUI\0\0ImageU"
+    "I\0\0ChmUI\0\0Annotations\0\0ExternalViewers\0\0ForwardSearch\0\0PrinterDefaults\0\0Fullscreen\0\0SelectionHandler"
+    "s\0\0Shortcuts\0\0Themes\0\0TabGroups\0\0\0DefaultPasswords\0UiLanguage\0VersionToSkip\0WindowState\0WindowPos\0Fi"
+    "leStates\0SessionData\0ReopenOnce\0TimeOfLastUpdateCheck\0OpenCountWeek\0PropWinPos\0\0"};
 static const FieldInfo gTheme_1_Fields[] = {
     {offsetof(Theme, name), SettingType::String, (intptr_t)""},
     {offsetof(Theme, textColor), SettingType::Color, (intptr_t)""},

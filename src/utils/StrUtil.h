@@ -1,6 +1,7 @@
 /* Copyright 2022 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
-
+#ifndef StrUtil_h
+#define StrUtil_h
 // note: include BaseUtil.h instead of including directly
 
 #define UTF8_BOM "\xEF\xBB\xBF"
@@ -384,3 +385,5 @@ TempStr ShortenStringUtf8Temp(const char* s, int maxRunes);
 TempStr ShortenStringUtf8InTheMiddleTemp(const char* s, int maxRunes);
 bool IsTextRtl(const WCHAR* s);
 bool IsTextRtl(const char* s);
+
+#endif

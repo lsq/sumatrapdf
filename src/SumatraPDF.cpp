@@ -23,6 +23,7 @@
 #include "utils/Timer.h"
 #include "utils/LzmaSimpleArchive.h"
 #include "utils/StrQueue.h"
+#include "utils/LocalSend.h"
 
 #include "wingui/UIModels.h"
 #include "wingui/Layout.h"
@@ -176,11 +177,11 @@ static void OpenHomePage(MainWindow* win) {
     homeTab->canvasRc = win->canvasRc;
 
     TabInfo* newTabInfo = new TabInfo();
-    newTabInfo->text    = str::Dup("Home");
+    newTabInfo->text = str::Dup("Home");
     newTabInfo->tooltip = nullptr;
-    newTabInfo->isPinned  = true;
-    newTabInfo->canClose  = true;
-    newTabInfo->userData  = (UINT_PTR)homeTab;
+    newTabInfo->isPinned = true;
+    newTabInfo->canClose = true;
+    newTabInfo->userData = (UINT_PTR)homeTab;
 
     int insertedIdx = win->tabsCtrl->InsertTab(0, newTabInfo);
     win->tabsCtrl->SetSelected(insertedIdx);
@@ -4084,11 +4085,10 @@ static UINT_PTR CALLBACK OFNHookProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM
     return 0;
 }
 #endif
-// 由于原函数是通过解析 ofn.lpstrFile 缓冲区（即 <dir>\0<file1>\0<file2>\0\0 的格式）来提取文件的，我们只需要在 Hook 触发 IDOK 时，把选中的多选文件手动拼接成这种标准格式，然后写回 ofn.lpstrFile 中即可
-// 主对话框子类化过程
+// 由于原函数是通过解析 ofn.lpstrFile 缓冲区（即 <dir>\0<file1>\0<file2>\0\0 的格式）来提取文件的，我们只需要在 Hook
+// 触发 IDOK 时，把选中的多选文件手动拼接成这种标准格式，然后写回 ofn.lpstrFile 中即可 主对话框子类化过程
 static LRESULT CALLBACK HookedDialogProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     if (uMsg == WM_COMMAND && LOWORD(wParam) == IDOK) {
-
         // 从 USERDATA 中获取当初传入的 OPENFILENAMEW 指针
         OPENFILENAMEW* pOfn = (OPENFILENAMEW*)GetWindowLongPtrW(hDlg, GWLP_USERDATA);
 
@@ -4096,7 +4096,7 @@ static LRESULT CALLBACK HookedDialogProc(HWND hDlg, UINT uMsg, WPARAM wParam, LP
         if (!pBrowser) return 0;
 
         IShellView* pView = NULL;
-        HRESULT hr = pBrowser->QueryActiveShellView( &pView);
+        HRESULT hr = pBrowser->QueryActiveShellView(&pView);
         if (FAILED(hr) || !pView) return 0;
 
         IDataObject* pDataObject = NULL;
@@ -4104,7 +4104,7 @@ static LRESULT CALLBACK HookedDialogProc(HWND hDlg, UINT uMsg, WPARAM wParam, LP
         pView->Release(); // 尽早释放
 
         if (SUCCEEDED(hr) && pDataObject) {
-            FORMATETC fmt = { CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+            FORMATETC fmt = {CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
             STGMEDIUM stg = {0};
             hr = pDataObject->GetData(&fmt, &stg);
             if (SUCCEEDED(hr)) {
@@ -4123,7 +4123,7 @@ static LRESULT CALLBACK HookedDialogProc(HWND hDlg, UINT uMsg, WPARAM wParam, LP
                             // 找到最后一个反斜杠，切分出文件夹路径
                             WCHAR* pSlash = wcsrchr(szFirstPath, L'\\');
                             if (pSlash) {
-                                *pSlash = L'\0'; // 此时 szFirstPath 是纯文件夹路径
+                                *pSlash = L'\0';                    // 此时 szFirstPath 是纯文件夹路径
                                 WCHAR* pFileNameStart = pSlash + 1; // 第一个文件名
 
                                 // 1. 写入文件夹路径
@@ -4132,7 +4132,7 @@ static LRESULT CALLBACK HookedDialogProc(HWND hDlg, UINT uMsg, WPARAM wParam, LP
                                     wcscpy_s(pWrite + curPos, maxLen - curPos, szFirstPath);
                                     curPos += dirLen;
                                     pOfn->nFileOffset = (WORD)(curPos + 1); // 记录文件名偏移量
-                                    pWrite[curPos++] = L'\0'; // 放入隔离符 \0
+                                    pWrite[curPos++] = L'\0';               // 放入隔离符 \0
                                 }
 
                                 // 2. 写入第一个文件名
@@ -4308,8 +4308,8 @@ static void GetFolderFilesFromGetOpenFileName(OPENFILENAMEW* ofn, StrVec& filesO
     WCHAR* file = ofn->lpstrFile + ofn->nFileOffset;
     // only a single file, full path
     char* path;
-        path = ToUtf8Temp(dir);
-        filesOut.Append(path);
+    path = ToUtf8Temp(dir);
+    filesOut.Append(path);
     if (file[-1] != 0) {
         return;
     }
@@ -4341,11 +4341,12 @@ void ExpandFilesAndFolders(const StrVec& filesAndFolders, StrVec& result) {
     }
 }
 
-void SliceFirst(const StrVec& str, StrVec& result) {
-    int n = str.Size();
-    for (int i = 1; i < n; i++) {
-        result.Append(str.At(i));
-    }
+void ExpandAllWithOutFirst(const StrVec& str, StrVec& result) {
+    StrVec tmpFiles;
+
+    result.Append(str.At(0));
+    SliceFirst(str, tmpFiles);
+    ExpandFilesAndFolders(tmpFiles, result);
 }
 
 static TempWStr GetFileFilterTemp() {
@@ -4443,14 +4444,14 @@ static void OpenFile(MainWindow* win) {
     }
 }
 
-void OpenFileForHomePageList(MainWindow* win) {
+bool OpenFileForHomePageList(MainWindow* win) {
     if (!CanAccessDisk()) {
-        return;
+        return false;
     }
 
     // don't allow opening different files in plugin mode
     if (gPluginMode) {
-        return;
+        return false;
     }
 
     OPENFILENAMEW ofn{};
@@ -4467,13 +4468,13 @@ void OpenFileForHomePageList(MainWindow* win) {
     // TODO: Use IFileOpenDialog instead (requires a Vista SDK, though)
     ofn.nMaxFile = MAX_PATH * 100;
     // if (false && !IsWindowsVistaOrGreater()) {
-// #if 0
-        ofn.lpfnHook = OFNHookProc;
-        ofn.Flags |= OFN_ENABLEHOOK;
-        ofn.nMaxFile = MAX_PATH / 2;
+    // #if 0
+    ofn.lpfnHook = OFNHookProc;
+    ofn.Flags |= OFN_ENABLEHOOK;
+    ofn.nMaxFile = MAX_PATH / 2;
 // #endif
-    // }
-    // note: ofn.lpstrFile can be reallocated by GetOpenFileName -> FileOpenHook
+// }
+// note: ofn.lpstrFile can be reallocated by GetOpenFileName -> FileOpenHook
 #if 0
     SelectionResult result = {NULL, 0};
     ofn.lCustData = (LPARAM)&result;
@@ -4482,7 +4483,7 @@ void OpenFileForHomePageList(MainWindow* win) {
     ofn.lpstrFile = file;
 
     if (!GetOpenFileNameW(&ofn)) {
-        return;
+        return false;
     }
 
     // 4. 此时无论走哪个分支，只要触发了 HookedDialogProc 的 IDOK
@@ -4505,6 +4506,8 @@ void OpenFileForHomePageList(MainWindow* win) {
     // GetFolderFilesFromGetOpenFileName(&ofn, files);
     // ExpandFilesAndFolders(files, win->homePageSelectedFiles);
     win->RedrawAll(true);
+
+    return true;
 }
 static void RemoveFailedFiles(StrVec& files) {
     for (char* path : gFilesFailedToOpen) {
@@ -4517,17 +4520,17 @@ static void RemoveFailedFiles(StrVec& files) {
 
 // 进度回调数据（在 uitask::Post 中传递）
 struct UploadProgressUIData {
-    MainWindow*     win;
+    MainWindow* win;
     UploadProgress* progress;
 };
 
 struct UploadTaskData {
     MainWindow* win;
-    StrVec      filePaths;
-    char*       serverA;
-    int         port;
-    char*       urlA;
-    StrQueue*    stopQueue;
+    StrVec filePaths;
+    char* serverA;
+    int port;
+    char* urlA;
+    StrQueue* stopQueue;
     // UploadProgress* progress; // 指针，独立堆分配
 };
 
@@ -4538,7 +4541,7 @@ static void OnUploadProgressUI(UploadProgressUIData* d) {
     InvalidateRect(d->win->hwndCanvas, nullptr, FALSE);
 }
 
-static void OnUploadProgress(UploadProgressUIData* ctx, UploadProgress *p) {
+static void OnUploadProgress(UploadProgressUIData* ctx, UploadProgress* p) {
     // 限流：每次回调都 Post（如需限流可加时间戳判断）
     auto d = new UploadProgressUIData{ctx->win, p};
     auto fn = MkFunc0(OnUploadProgressUI, d);
@@ -4549,7 +4552,7 @@ static void OnUploadFinishedUI(UploadProgressUIData* d) {
     AutoDelete del(d);
     if (!IsMainWindowValid(d->win)) return;
     if (!d->win->uploadProgress) return;
-    delete(d->win->uploadProgress);
+    delete (d->win->uploadProgress);
     d->win->uploadProgress = nullptr;
     d->win->RedrawAll(false);
 }
@@ -4561,8 +4564,7 @@ static void UploadTask(UploadTaskData* d) {
     auto cb = MkFunc1(OnUploadProgress, &cbCtx);
     // OnUploadProgress(&cbCtx);
 
-    HttpPostFilesStreamPool(d->serverA, d->port, d->urlA,
-                            d->filePaths, 4, 64 * 1024, cb, d->stopQueue);
+    HttpPostFilesStreamPool(d->serverA, d->port, d->urlA, d->filePaths, 4, 64 * 1024, cb, d->stopQueue);
 
     // 上传完成，清理 UI 状态
     // auto cleanup = new UploadProgressUIData{d->win, nullptr};
@@ -4582,52 +4584,67 @@ static void UploadFiles(MainWindow* win) {
     auto cfn = MkFunc0(OnUploadFinishedUI, cleanup);
     uitask::Post(cfn, "UploadFinished");
 
-    // 1. 弹出文件选择对话框（复用 OpenFile 的逻辑）
-    OPENFILENAMEW ofn{};
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner   = win->hwndFrame;
-    ofn.lpstrFilter = GetFileFilterTemp();
-    ofn.nFilterIndex = 1;
-    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY |
-                OFN_ALLOWMULTISELECT | OFN_EXPLORER;
-    ofn.nMaxFile = MAX_PATH * 100;
-    AutoFreeWStr file = AllocArray<WCHAR>(ofn.nMaxFile);
-    ofn.lpstrFile = file;
-    if (!GetOpenFileNameW(&ofn)) return;
+    if (!OpenFileForHomePageList(win)) return;
 
     StrVec files;
-    GetFilesFromGetOpenFileName(&ofn, files);
-    if (files.Size() == 0) return;
+    ExpandAllWithOutFirst(win->homePageSelectedFiles, files);
 
     // 2. 从配置读取服务器地址（gGlobalPrefs->remoteIp）
     const char* remoteIp = gGlobalPrefs->remoteIp;
     if (!remoteIp || !*remoteIp) {
         // 没有配置 RemoteIp，弹出提示
-        MessageBoxW(win->hwndFrame,
-                    L"请在高级设置中配置 RemoteIp 选项",
-                    L"上传失败", MB_OK | MB_ICONWARNING);
+        MessageBoxW(win->hwndFrame, L"请在高级设置中配置 RemoteIp 选项", L"上传失败", MB_OK | MB_ICONWARNING);
         return;
     }
 
-    // 3. 创建停止队列，保存到 win 以便取消
-    auto* stopQueue = new StrQueue();
-    win->uploadStopQueue = stopQueue;
-    // auto gProgress = new UploadProgress; // 独立堆分配
+    if (gGlobalPrefs->localSend) {
+        auto* d = new UploadTaskData();
+        d->win = win;
+        d->filePaths = files; // StrVec 复制
+        d->port = 8880;       // 或从配置读取
+        d->urlA = nullptr;
+        d->serverA = str::Dup(remoteIp);
+        d->stopQueue = nullptr;
 
-    // 4. 启动上传任务
-    auto* d = new UploadTaskData();
-    d->win       = win;
-    d->filePaths = files;  // StrVec 复制
-    d->serverA   = str::Dup(remoteIp);
-    d->port      = 8880;     // 或从配置读取
-    d->urlA      = str::Dup("/upload");
-    d->stopQueue = stopQueue;
-    // d->progress = gProgress;
+        auto fn = MkFunc0(
+            +[](UploadTaskData* ctx) {
+                UploadProgressUIData cbCtx{ctx->win, nullptr};
+                auto cb = MkFunc1(OnUploadProgress, &cbCtx);
 
-    // win->uploadProgress = nullptr; //初始为空，等第一次回调再设置
+                bool ok = LocalSender(ctx->serverA, ctx->filePaths, cb);
+                if (ok) {
+                    logf("LocalSend upload failed...");
+                }
 
-    auto fn = MkFunc0(UploadTask, d);
-    RunAsync(fn, "UploadFilesThread");
+                free(ctx->serverA);
+                delete ctx;
+            },
+            d);
+
+        RunAsync(fn, "UploadFilesThread");
+    } else {
+        StrVec uFiles;
+        SliceFirst(files, uFiles);
+        // 3. 创建停止队列，保存到 win 以便取消
+        auto* stopQueue = new StrQueue();
+        win->uploadStopQueue = stopQueue;
+        // auto gProgress = new UploadProgress; // 独立堆分配
+
+        // 4. 启动上传任务
+        auto* d = new UploadTaskData();
+        d->win = win;
+        d->filePaths = uFiles; // StrVec 复制
+        d->serverA = str::Dup(remoteIp);
+        d->port = 8880; // 或从配置读取
+        d->urlA = str::Dup("/upload");
+        d->stopQueue = stopQueue;
+        // d->progress = gProgress;
+
+        // win->uploadProgress = nullptr; //初始为空，等第一次回调再设置
+
+        auto fn = MkFunc0(UploadTask, d);
+        RunAsync(fn, "UploadFilesThread");
+    }
 }
 
 static StrVec& CollectNextPrevFilesIfChanged(const char* path) {

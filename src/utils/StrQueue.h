@@ -24,5 +24,5 @@ struct StrQueue {
     volatile bool isStopped = false;
     CRITICAL_SECTION cs;
     HANDLE hEvent = nullptr;
-    HANDLE hStopEvent = nullptr; //新增：手动重置事件
+    HANDLE hStopEvent = nullptr; // 新增：手动重置事件
 };

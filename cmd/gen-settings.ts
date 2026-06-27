@@ -693,7 +693,8 @@ const globalPrefs: Field[] = [
     "2.5",
   ),
   mkField("RememberOpenedFiles", Bool, true, "if true, we remember which files we opened and their display settings"),
-  mkField("RemoteIp", Str, null, "socket ip address"),
+  mkField("RemoteIp", Str, "localhost", "socket ip address"),
+  mkField("LocalSend", Bool, true, "if true, we use localsend client to send files"),
   mkField(
     "RememberStatePerDocument",
     Bool,

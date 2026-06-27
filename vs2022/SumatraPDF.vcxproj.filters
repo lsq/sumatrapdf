@@ -710,6 +710,9 @@
     <ClCompile Include="..\src\utils\tests\JsonParser_ut.cpp">
       <Filter>src\utils\tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\utils\tests\LocalSend_ut.cpp">
+      <Filter>src\utils\tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\utils\tests\SettingsUtil_ut.cpp">
       <Filter>src\utils\tests</Filter>
     </ClCompile>
@@ -843,6 +846,9 @@
       <Filter>cmd</Filter>
     </None>
     <None Include="..\cmd\check-access-keys.ts">
+      <Filter>cmd</Filter>
+    </None>
+    <None Include="..\cmd\check-rebase-conflicts.sh">
       <Filter>cmd</Filter>
     </None>
     <None Include="..\cmd\clang-tidy.ts">
@@ -1160,7 +1166,6 @@
     <None Include="..\premake5.files.lua" />
     <None Include="..\premake5.lua" />
     <None Include="..\readme.md" />
-    <None Include="..\sumlog.txt" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\src\SumatraPDF.rc">
