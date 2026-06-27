@@ -174,6 +174,7 @@ WStr Replace(WStr s, WStr toReplace, WStr replaceWith);
 namespace url {
 
 void DecodeInPlace(Str url);
+TempStr UrlEncodeTemp(const char* s);
 bool IsAbsolute(Str url);
 TempStr GetFullPathTemp(Str url);
 TempStr GetFileNameTemp(Str url);

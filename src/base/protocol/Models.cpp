@@ -94,7 +94,6 @@ FileMetadata::FromJson(const JsonValue& v)
 	return f;
 }
 
-
 #endif
 
 // 将 char* 以 JSON 字符串形式写入 StrBuilder（含两端引号）
@@ -107,11 +106,21 @@ static void JsonAppendStr(StrBuilder& out, const char* s) {
     out.AppendChar('"');
     for (const char* c = s; *c; c++) {
         switch (*c) {
-            case '"':  out.Append("\\\""); break;
-            case '\\': out.Append("\\\\"); break;
-            case '\n': out.Append("\\n");  break;
-            case '\r': out.Append("\\r");  break;
-            case '\t': out.Append("\\t");  break;
+            case '"':
+                out.Append("\\\"");
+                break;
+            case '\\':
+                out.Append("\\\\");
+                break;
+            case '\n':
+                out.Append("\\n");
+                break;
+            case '\r':
+                out.Append("\\r");
+                break;
+            case '\t':
+                out.Append("\\t");
+                break;
             default:
                 // 控制字符用 \uXXXX 转义
                 if ((unsigned char)*c < 0x20) {
@@ -128,22 +137,22 @@ static void JsonAppendStr(StrBuilder& out, const char* s) {
 // 序列化 struct info* 为 JSON 对象片段（不含外层花括号）
 static void JsonAppendDeviceInfoFields(StrBuilder& out, const struct DeviceInfo* inf) {
     out.Append("\"alias\":");
-    JsonAppendStr(out, inf ? inf->alias: nullptr);
+    JsonAppendStr(out, inf ? inf->alias : nullptr);
     // 若有更多字段，继续追加：
     // out.Append(",\"otherField\":");
     // JsonAppendStr(out, inf ? inf->otherField : nullptr);
     // out.AppendFmt(", \"version\":%d", inf->version);
     out.Append(",\"version\":");
-    JsonAppendStr(out, inf ? inf->version: nullptr);
+    JsonAppendStr(out, inf ? inf->version : nullptr);
     out.Append(",\"deviceModel\":");
-    JsonAppendStr(out, inf ? inf->deviceModel: nullptr);
+    JsonAppendStr(out, inf ? inf->deviceModel : nullptr);
     out.Append(",\"deviceType\":");
-    JsonAppendStr(out, inf ? inf->deviceType: nullptr);
+    JsonAppendStr(out, inf ? inf->deviceType : nullptr);
     out.Append(",\"fingerprint\":");
-    JsonAppendStr(out, inf ? inf->fingerprint: nullptr);
+    JsonAppendStr(out, inf ? inf->fingerprint : nullptr);
     out.AppendFmt(",\"port\":%d", inf->port);
     out.Append(",\"protocol\":");
-    JsonAppendStr(out, inf ? inf->protocol: nullptr);
+    JsonAppendStr(out, inf ? inf->protocol : nullptr);
     out.AppendFmt(",\"download\":%s", inf ? (inf->download ? "true" : "false") : "false");
 }
 
@@ -152,22 +161,22 @@ static void JsonAppendFileMetadataFields(StrBuilder& out, const FileMetadata* cf
     // out.AppendFmt("\"port\":%d,", cfg->port);
     // out.AppendFmt("\"useTls\":%s", cfg->useTls ? "true" : "false");
     out.Append("\"id\":");
-    JsonAppendStr(out, cfg ? cfg->id: nullptr);
+    JsonAppendStr(out, cfg ? cfg->id : nullptr);
     out.Append(",\"fileName\":");
-    JsonAppendStr(out, cfg ? cfg->fileName: nullptr);
+    JsonAppendStr(out, cfg ? cfg->fileName : nullptr);
     out.AppendFmt(",\"size\":%lld", cfg->size);
     out.Append(",\"fileType\":");
-    JsonAppendStr(out, cfg ? cfg->fileType: nullptr);
+    JsonAppendStr(out, cfg ? cfg->fileType : nullptr);
     out.Append(",\"sha256\":");
-    JsonAppendStr(out, cfg ? cfg->sha256: nullptr);
+    JsonAppendStr(out, cfg ? cfg->sha256 : nullptr);
     out.Append(",\"preview\":");
-    JsonAppendStr(out, cfg ? cfg->preview: nullptr);
+    JsonAppendStr(out, cfg ? cfg->preview : nullptr);
     out.Append(",\"modified\":");
-    JsonAppendStr(out, cfg ? cfg->modified: nullptr);
+    JsonAppendStr(out, cfg ? cfg->modified : nullptr);
     out.Append(",\"accessed\":");
-    JsonAppendStr(out, cfg ? cfg->accessed: nullptr);
+    JsonAppendStr(out, cfg ? cfg->accessed : nullptr);
     out.Append(",\"localPath\":");
-    JsonAppendStr(out, cfg ? cfg->localPath: nullptr);
+    JsonAppendStr(out, cfg ? cfg->localPath : nullptr);
 }
 
 // 序列化整个 IpInfo 为 JSON 字符串
@@ -193,11 +202,11 @@ TempStr UploadInfoToJson(const UploadInfo* up) {
     out.Append("  \"files\":{\n");
     int n = up->files->Size();
     for (int i = 0; i < n; i++) {
-        const char*         key = up->files->At(i);
+        const char* key = up->files->At(i);
         const FileMetadata* cfg = *up->files->AtData(i);
 
         out.Append("    ");
-        JsonAppendStr(out, key);   // 动态键
+        JsonAppendStr(out, key); // 动态键
         out.Append(":{\n");
         out.Append("      ");
         JsonAppendFileMetadataFields(out, cfg);
@@ -211,13 +220,10 @@ TempStr UploadInfoToJson(const UploadInfo* up) {
 
     out.Append("}");
 
-    return out.StealData(GetTempAllocator());  // 调用方负责 free
+    return out.StealData(GetTempAllocator()); // 调用方负责 free
 }
 
-
-TempStr BuildPrepareUpload(const DeviceInfo* info,
-	const StrVecWithData<FileMetadata*>* files)
-{
+TempStr BuildPrepareUpload(const DeviceInfo* info, const StrVecWithData<FileMetadata*>* files) {
     UploadInfo upi;
     upi.info = info;
     upi.files = files;
@@ -273,10 +279,10 @@ struct PrepareUploadInfoDeserializer : json::ValueVisitor {
         const char* kSessionPrefix = "/sessionId";
         if (str::StartsWith(path, kSessionPrefix)) {
             if (!out->sessionId) {
-                out->sessionId =  str::Dup(value);
+                out->sessionId = str::Dup(value);
                 return true;
             }
-            out->sessionId =  str::Dup(value);
+            out->sessionId = str::Dup(value);
             return true;
         }
 
@@ -290,7 +296,7 @@ struct PrepareUploadInfoDeserializer : json::ValueVisitor {
             //     return true; // 路径格式不对，跳过
             // }
             // 提取 IP 键（临时字符串）
-            char* fileId = str::Dup(afterPrefix);
+            TempStr fileId = str::DupTemp(afterPrefix);
             // const char* fieldName = slash + 1;
 
             // 查找或创建 ServerConfig 条目
@@ -313,8 +319,8 @@ struct PrepareUploadInfoDeserializer : json::ValueVisitor {
 
 // 返回 true 表示 JSON 格式有效
 // bool DeserializeIpInfo(const char* jsonData, PrepareUploadResult* out) {
-    // PrepareUploadInfoDeserializer visitor(out);
-    // return json::Parse(jsonData, &visitor);
+// PrepareUploadInfoDeserializer visitor(out);
+// return json::Parse(jsonData, &visitor);
 // }
 
 // 释放 PrepareUploadResult 内部资源
@@ -328,13 +334,10 @@ void FreePpInfo(PrepareUploadResult* ip) {
     ip->fileTokens.Reset(); // 清空 StrVecWithData
 }
 
-bool
-ParsePrepareUploadResponse(const char* body, PrepareUploadResult* out)
-{
+bool ParsePrepareUploadResponse(const char* body, PrepareUploadResult* out) {
     PrepareUploadInfoDeserializer visitor(out);
     return json::Parse(body, &visitor);
 }
-
 
 #if 0
 // For server

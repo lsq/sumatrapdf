@@ -962,6 +962,19 @@ function darkmodelib_files()
 end
 
 function base_files()
+  files_in_dir("src/base/protocol", {
+    "Constants.h",
+    "Models.*",
+    "Fingerprint.*",
+  })
+  files_in_dir("src/base/net", {
+    "IHttpClient.h",
+    "HttpClient.*",
+  })
+  files_in_dir("src/base/client", {
+    "FileSource.*",
+    "UploadSession.*",
+  })
   files_in_dir("src/base", {
     "ApiHook.*",
     "Archive.*",
@@ -990,7 +1003,9 @@ function base_files()
     "GuessFileType.*",
     "HtmlTags.*",
     "Http.*",
+    "JsonUtil.*",
     "JsonParser.*",
+    "LocalSend.*",
     "Log.*",
     "LzmaSimpleArchive.*",
     "RegistryPaths.*",
@@ -1404,6 +1419,19 @@ function efi_files()
 end
 
 function test_util_files()
+  files_in_dir("src/utils/protocol", {
+    "Constants.h",
+    "Models.*",
+    "Fingerprint.*",
+  })
+  files_in_dir("src/utils/net", {
+    "IHttpClient.h",
+    "HttpClient.*",
+  })
+  files_in_dir("src/utils/client", {
+    "FileSource.*",
+    "UploadSession.*",
+  })
   files_in_dir("src/common", {
     "log.cpp",
   })
@@ -1424,6 +1452,9 @@ function test_util_files()
     "Geom.*",
     "HtmlTags.*",
     "JsonParser.*",
+    "JsonUtil.*",
+    "HttpUtil.*",
+    "ThreadUtil.*",
     "Log.*",
     "Scoped.*",
     "SettingsUtil.*",

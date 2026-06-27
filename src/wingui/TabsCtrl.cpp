@@ -807,7 +807,7 @@ int TabsCtrl::InsertTab(int idx, TabInfo* tab) {
     item.pszText = CWStrTemp(tab->text);
     int res = TabCtrl_InsertItem(hwnd, idx, &item);
     if (res < 0) {
-        tabs.RemoveAt(idx); //回滚
+        tabs.RemoveAt(idx); // 回滚
         return res;
     }
     // tabs.InsertAt(idx, tab);

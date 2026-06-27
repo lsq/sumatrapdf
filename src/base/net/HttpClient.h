@@ -10,42 +10,28 @@
 namespace LocalSend {
 
 class HttpClient : public IHttpClient {
-public:
-	HttpClient();
-	~HttpClient();
+  public:
+    HttpClient();
+    ~HttpClient();
 
-	// Abilita TLS per tutte le connessioni successive. Crea internamente
-	// un SSL_CTX client che accetta certificati self-signed (come da
-	// protocollo LocalSend).
-	// void EnableTls();
+    // Abilita TLS per tutte le connessioni successive. Crea internamente
+    // un SSL_CTX client che accetta certificati self-signed (come da
+    // protocollo LocalSend).
+    // void EnableTls();
 
-	HttpResponse Post(const char* host, int port,
-		const char* path, StrBuilder* contentType,
-		StrBuilder* body) override;
+    HttpResponse Post(const char* host, int port, const char* path, StrBuilder* contentType, StrBuilder* body) override;
 
-#if 1
-	HttpResponse PostFile(const char* host, int port,
-		const char* path, StrBuilder* contentType,
-		const char* filePath,
-        int maxQueueChunks,
-        int chunkSize,
-		const Func1<HttpUploadProgress*>& cbProgress) override;
-    inline HttpResponse PostFile(
-    const char* host, int port,
-    const char* path, StrBuilder* contentType,
-    const char* filePath,
-    int maxQueueChunks,
-    int chunkSize,
-    void* /*nullCallback*/
-) {
-    return PostFile(host, port, path, contentType, filePath,
-                    maxQueueChunks, chunkSize,
-                    Func1<HttpUploadProgress*>());
-}
-#endif
+    HttpResponse PostFile(const char* host, int port, const char* path, StrBuilder* contentType, const char* filePath,
+                          int maxQueueChunks, int chunkSize, const Func1<HttpUploadProgress*>& cbProgress) override;
+    HttpResponse PostFile(const char* host, int port, const char* path, StrBuilder* contentType, const char* filePath,
+                          int maxQueueChunks, int chunkSize, void* /*nullCallback*/
+    ) {
+        return PostFile(host, port, path, contentType, filePath, maxQueueChunks, chunkSize,
+                        Func1<HttpUploadProgress*>());
+    }
 
-// private:
-	// void* fSslCtx; // SSL_CTX*, nullptr se TLS disabilitato
+    // private:
+    // void* fSslCtx; // SSL_CTX*, nullptr se TLS disabilitato
 };
 
 } // namespace LocalSend

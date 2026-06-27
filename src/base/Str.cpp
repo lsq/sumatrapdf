@@ -2,6 +2,7 @@
    License: Simplified BSD (see COPYING.BSD) */
 
 #include "Base.h"
+#include "common/common.h"
 
 #if !defined(_MSC_VER)
 #define _strdup strdup
@@ -994,6 +995,23 @@ void DecodeInPlace(Str url) {
     }
     url.s[dst] = '\0';
     url.len = dst;
+}
+TempStr UrlEncodeTemp(const char* s) {
+    if (!s) {
+        return nullptr;
+    }
+    StrBuilder out;
+    for (const u8* p = (const u8*)s; *p; p++) {
+        u8 c = *p;
+        bool isUnreserved = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ||
+                            c == '_' || c == '.' || c == '~';
+        if (isUnreserved) {
+            out.AppendChar((char)c);
+        } else {
+            out.AppendFmt("%%%02X", (unsigned int)c);
+        }
+    }
+    return out.StealData(GetTempArena());
 }
 } // namespace url
 

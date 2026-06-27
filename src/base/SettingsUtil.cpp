@@ -342,7 +342,6 @@ static void deserializeField(const FieldInfo& field, u8* base, Str value) {
             }
         } break;
 
-
         case SettingType::Float: {
             Str s = !str::IsNull(value) ? value : FieldDefaultStr(field);
             str::Parse(s, "%f", (float*)fieldPtr);

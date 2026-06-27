@@ -8,14 +8,16 @@
 #include "utils/StrQueue.h"
 // #include "utils/HttpUtil.h"
 #include "utils/net/HttpClient.h"
+#include <cstdio>
 
 // #include "utils/Log.h"
-
 
 namespace LocalSend {
 
 constexpr const WCHAR* kUserAgent = L"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:152.0) Gecko/20100101 Firefox/152.0";
-
+#ifndef INTERNET_FLAG_IGNORE_CERT_WRONG_USAGE
+#define INTERNET_FLAG_IGNORE_CERT_WRONG_USAGE 0x00002000
+#endif
 
 #if 0
 // 判断是否为 URL 安全字符（RFC 3986）
@@ -227,17 +229,11 @@ BuildHead(const std::string& host, int port, const std::string& path,
 } // namespace
 #endif
 
-HttpClient::HttpClient() {
-}
+HttpClient::HttpClient() {}
 
-HttpClient::~HttpClient() {
-}
-HttpResponse
-HttpClient::Post(const char* host, int port,
-		const char* path, StrBuilder* contentType,
-		StrBuilder* body)
-{
-	HttpResponse resp;
+HttpClient::~HttpClient() {}
+HttpResponse HttpClient::Post(const char* host, int port, const char* path, StrBuilder* contentType, StrBuilder* body) {
+    HttpResponse resp;
 
     // StrBuilder resp(2048);
     bool ok = false;
@@ -256,6 +252,7 @@ HttpClient::Post(const char* host, int port,
     WCHAR* server = ToWStrTemp(host);
     WCHAR* url = ToWStrTemp(path);
     DWORD infoLevel;
+    // DWORD dwFlags = SECURITY_FLAG_IGNORE_ALL_CERT_ERRORS;
 
     resp.error = ERROR_SUCCESS;
     DWORD accessType = INTERNET_OPEN_TYPE_PRECONFIG;
@@ -275,6 +272,11 @@ HttpClient::Post(const char* host, int port,
     if (port == 443) {
         flags |= INTERNET_FLAG_SECURE;
     }
+    if (port == 153317) {
+        // ✅ 正确：添加 INTERNET_FLAG_SECURE → WinINet 发起 TLS 握手
+        flags = INTERNET_FLAG_SECURE | INTERNET_FLAG_IGNORE_CERT_DATE_INVALID | INTERNET_FLAG_IGNORE_CERT_CN_INVALID |
+                INTERNET_FLAG_IGNORE_CERT_WRONG_USAGE;
+    }
     hReq = HttpOpenRequestW(hConn, L"POST", url, nullptr, nullptr, nullptr, flags, 0);
     if (!hReq) {
         printf("HttpPost: HttpOpenRequestW failed\n");
@@ -292,8 +294,16 @@ HttpClient::Post(const char* host, int port,
 
     InternetSetOptionW(hReq, INTERNET_OPTION_SEND_TIMEOUT, &timeoutMs, sizeof(timeoutMs));
     InternetSetOptionW(hReq, INTERNET_OPTION_RECEIVE_TIMEOUT, &timeoutMs, sizeof(timeoutMs));
+    // InternetSetOptionW(hReq, INTERNET_OPTION_SECURITY_FLAGS, &dwFlags, sizeof(dwFlags));
 
     if (!HttpSendRequestA(hReq, hdr, hdrLen, d, dLen)) {
+        // 尝试获取更详细的扩展错误
+        // DWORD err = GetLastError();
+        // DWORD extErr = 0;
+        // DWORD extErrSize = sizeof(extErr);
+        // InternetQueryOption(hReq, INTERNET_OPTION_EXTENDED_ERROR, &extErr, &extErrSize);
+
+        // printf("HttpSendRequestA failed: GetLastError=%lu, ExtendedError=%lu", err, extErr);
         goto Error;
     }
     // 示例：获取完整的原始响应头（包括状态行）
@@ -373,23 +383,19 @@ Error:
 }
 
 #if 1
-HttpResponse HttpClient::PostFile(const char* host, int port,
-    const char* path, StrBuilder* contentType,
-    const char* filePath,
-    int maxQueueChunks,
-    int chunkSize,
-    const Func1<HttpUploadProgress*>& cbProgress)
-{
+HttpResponse HttpClient::PostFile(const char* host, int port, const char* path, StrBuilder* contentType,
+                                  const char* filePath, int maxQueueChunks, int chunkSize,
+                                  const Func1<HttpUploadProgress*>& cbProgress) {
     HttpResponse resp;
-    // logf("PostFile: server='%s' port=%d path='%s' file='%s'\n",
-         // host, port, path, filePath);
+    // printf("PostFile: server='%s' port=%d path='%s' file='%s'\n",
+    // host, port, path, filePath);
 
     bool ok = false;
     HINTERNET hInet = nullptr, hConn = nullptr, hReq = nullptr;
     DWORD respCode = 0, respCodeSize = sizeof(respCode);
     DWORD timeoutMs = 60 * 1000;
     // 建立 HTTP 连接
-    WCHAR* server  = ToWStrTemp(host);
+    WCHAR* server = ToWStrTemp(host);
     WCHAR* urlPath = ToWStrTemp(path);
 
     resp.error = ERROR_SUCCESS;
@@ -417,8 +423,7 @@ HttpResponse HttpClient::PostFile(const char* host, int port,
         goto Error;
     }
 
-    hConn = InternetConnectW(hInet, server, (INTERNET_PORT)port,
-                             nullptr, nullptr, INTERNET_SERVICE_HTTP, 0, 1);
+    hConn = InternetConnectW(hInet, server, (INTERNET_PORT)port, nullptr, nullptr, INTERNET_SERVICE_HTTP, 0, 1);
     if (!hConn) {
         // logf("HttpPostFileStream: InternetConnectW failed\n");
         goto Error;
@@ -436,14 +441,13 @@ HttpResponse HttpClient::PostFile(const char* host, int port,
         goto Error;
     }
 
-    InternetSetOptionW(hReq, INTERNET_OPTION_SEND_TIMEOUT,    &timeoutMs, sizeof(timeoutMs));
+    InternetSetOptionW(hReq, INTERNET_OPTION_SEND_TIMEOUT, &timeoutMs, sizeof(timeoutMs));
     InternetSetOptionW(hReq, INTERNET_OPTION_RECEIVE_TIMEOUT, &timeoutMs, sizeof(timeoutMs));
 
     // 添加 Content-Length 头
     {
         // TempStr hdr = str::FormatTemp("Content-Length: %lld\r\nContent-Type: application/octet-stream\r\n\r\n",
-        TempStr hdr = str::FormatTemp("Content-Length: %lld\r\nContent-Type: %s\r\n\r\n",
-                                      (long long)fileSize,
+        TempStr hdr = str::FormatTemp("Content-Length: %lld\r\nContent-Type: %s\r\n\r\n", (long long)fileSize,
                                       contentType->Get());
         WCHAR* hdrW = ToWStrTemp(hdr);
         HttpAddRequestHeadersW(hReq, hdrW, (DWORD)-1, HTTP_ADDREQ_FLAG_ADD);
@@ -452,7 +456,7 @@ HttpResponse HttpClient::PostFile(const char* host, int port,
     // 开始流式发送（不在此处传入 body，后续用 InternetWriteFile 写入）
     {
         INTERNET_BUFFERS bufIn{};
-        bufIn.dwStructSize  = sizeof(INTERNET_BUFFERS);
+        bufIn.dwStructSize = sizeof(INTERNET_BUFFERS);
         bufIn.dwBufferTotal = (DWORD)fileSize;
         if (!HttpSendRequestExW(hReq, &bufIn, nullptr, 0, 0)) {
             // logf("HttpPostFileStream: HttpSendRequestExW failed\n");
@@ -473,45 +477,44 @@ HttpResponse HttpClient::PostFile(const char* host, int port,
                 break; // 队列结束
             }
             DWORD dwWritten = 0;
-            // logf("debug: chunk data length: %d\n", chunk.len);
+            // printf("debug: chunk data length: %d\n", chunk.len);
             BOOL writeOk = InternetWriteFile(hReq, chunk.data, chunk.len, &dwWritten);
             free(chunk.data);
             if (!writeOk) {
-                // logf("HttpPostFileStream: InternetWriteFile failed\n");
+                // printf("HttpPostFileStream: InternetWriteFile failed\n");
                 LogLastError();
                 goto Error;
             }
             // tt += dwWritten;
-            // logf("debug: send data length: %d\nTotal send: %d\n", dwWritten, tt);
+            // printf("debug: send data length: %d\nTotal send: %d\n", dwWritten, tt);
             progress.nUploaded += (i64)dwWritten;
             cbProgress.Call(&progress);
         }
     }
 
     if (readerError) {
-        // logf("HttpPostFileStream: file reader thread reported error\n");
+        printf("HttpPostFileStream: file reader thread reported error\n");
         resp.error = (DWORD)readerError;
         goto Error;
     }
 
     // 结束请求，等待服务器响应
     if (!HttpEndRequest(hReq, nullptr, 0, 0)) {
-        // logf("HttpPostFileStream: HttpEndRequest failed\n");
+        printf("HttpPostFileStream: HttpEndRequest failed\n");
         LogLastError();
         goto Error;
     }
 
-    HttpQueryInfoW(hReq, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
-                   &respCode, &respCodeSize, nullptr);
-    // logf("HttpPostFileStream: response code %d\n", (int)respCode);
+    HttpQueryInfoW(hReq, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &respCode, &respCodeSize, nullptr);
+    // printf("HttpPostFileStream: response code %d\n", (int)respCode);
     resp.httpStatusCode = respCode;
     ok = (respCode >= 200 && respCode < 300);
 
 Exit:
-    if (hReq)  InternetCloseHandle(hReq);
+    if (hReq) InternetCloseHandle(hReq);
     if (hConn) InternetCloseHandle(hConn);
     if (hInet) InternetCloseHandle(hInet);
-	return resp;
+    return resp;
 Error:
     resp.error = GetLastError();
     if (0 == resp.error) {
