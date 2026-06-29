@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 import { $ } from "bun";
 import { clearDirPreserveSettings } from "./clean";
 import { ensureNinja, ninjaDir, ninjaToRoot } from "./ninja";
-import { detectVisualStudio2026, runLogged } from "./util";
+import { detectVisualStudio as detectVisualStudio2026, runLogged } from "./util";
 
 type BuildMode = "windows" | "all" | "smoke" | "ci" | "daily" | "codeql" | "build-no";
 type Config = "debug" | "release" | "profile";

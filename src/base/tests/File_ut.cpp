@@ -4,10 +4,32 @@
 #include "base/Base.h"
 #include "base/File.h"
 #include "base/Win.h"
+#include "base/DirScan.h"
 
 // must be last due to assert() over-write
 #include "base/tests/UtAssert.h"
 
+void TestDirIter() {
+    Str st = ("E:\\temp\\报销");
+    // Str st = ("E:\\temp\\t1");
+    printf("path exists: %d\n", dir::Exists(st));
+    auto dr = DirIter{st};
+    // dr.includeDirs = false;
+    // dr.includeFiles = true;
+    dr.recurse = true;
+
+    // for (DirIterEntry* de : dr) {
+    //     printf("d->filepath:%s\n", de->filePath.s);
+    // }
+    // auto it = dr.begin();
+    // printf("begin==end: %d,\n", // handle: %p\n",
+    // it == dr.end()
+    // /* 如果能访问 */ );
+
+    for (DirIterEntry* de : dr) {
+        printf("filepath: %s\n", de->filePath.s);
+    }
+}
 void FileUtilTest() {
     FILETIME epoch = FileTimeFromU64(kFileTimeUnixEpoch);
     FILETIME oneSecond = FileTimeFromU64(kFileTimeUnixEpoch + kFileTimeTicksPerSec);
@@ -130,6 +152,10 @@ void FileUtilTest() {
         Str p = StrL("C:\\foo\\prince of persia technical doc.pdf");
         TempStr norm = path::NormalizeTemp(p);
         utassert(str::EqI(norm, p));
+    }
+    {
+        printf("Test TestDirIter\n--------------------\n");
+        TestDirIter();
     }
     {
         // a UNC path is \\?\UNC\server\share when extended, not \\?\\\server\share
