@@ -1,4 +1,5 @@
 #include "utils/client/UploadSession.h"
+#include "common/common.h"
 #include "utils/BaseUtil.h"
 #include "utils/StrUtil.h"
 #include "utils/StrQueue.h"
@@ -138,7 +139,7 @@ static void UploadWorkerThread(UploadWorkerCtx* t) {
 
         free(path);
     }
-    DestroyTempAllocator();
+    DestroyTempArena();
 };
 
 void UploadSession::Cancel(const char* host, int port, const char* sessionId) {
@@ -177,7 +178,7 @@ SendReport UploadSession::Send(const char* host, int port, int workerCount, int 
     }
 
     PrepareUploadResult prep;
-    TempStr uploadData = resp.data.StealData(GetTempAllocator());
+    TempStr uploadData = resp.data.StealData(GetTempArena());
     if (!ParsePrepareUploadResponse(uploadData, &prep)) {
         return report;
     };

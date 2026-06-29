@@ -86,6 +86,7 @@ HomePageSortByFrequentlyRead = false
 
 ; if true, shows the home page document history as a list instead of thumbnails
 HomePageShowList = false
+
 ; if true, shows recently opened files as a list (path, page, reading progress)
 ; instead of thumbnails
 HomePageListView = false

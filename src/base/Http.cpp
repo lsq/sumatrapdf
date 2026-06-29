@@ -287,7 +287,7 @@ void FileReaderThread(FileReaderData* td) {
         td->queue->MarkFinished();
         free(td->filePath);
         delete td;
-        DestroyTempAllocator();
+        DestroyTempArena();
         return;
     }
 
@@ -316,7 +316,7 @@ void FileReaderThread(FileReaderData* td) {
     td->queue->MarkFinished();
     free(td->filePath);
     delete td;
-    DestroyTempAllocator();
+    DestroyTempArena();
 }
 
 // -----------------------------------------------------------------------
@@ -515,7 +515,7 @@ static void UploadWorkerThread(UploadWorkerCtx* ctx) {
 
         free(path);
     }
-    DestroyTempAllocator();
+    DestroyTempArena();
 }
 
 int HttpPostFilesStreamPool(const char* serverA, int port, const char* urlA, const StrVec& filePaths, int workerCount,
