@@ -118,7 +118,6 @@ static void OnMouseLeftButtonUpAbout(MainWindow* win, int x, int y, WPARAM) {
     } else if (str::Eq(url, kLinkNextTip)) {
         PickAnotherRandomPromotion();
         win->RedrawAll(true);
-<<<<<<< HEAD
     } else if (str::Eq(url, kLinkHomeListView)) {
         gGlobalPrefs->homePageShowList = true;
         win->homePageScrollY = 0;
@@ -139,14 +138,11 @@ static void OnMouseLeftButtonUpAbout(MainWindow* win, int x, int y, WPARAM) {
             win->DeleteToolTip();
             win->RedrawAll(true);
         }
-||||||| parent of 5a105e0d2 (beautify home page)
-=======
     } else if (str::Eq(url, kLinkCloseUpload)) {
         // 通过 uitask::Post 在消息处理完成后再清理，避免重入
         auto cleanup = new CloseUploadData{win};
         auto cfn = MkFunc0(OnUploadFinished, cleanup);
         uitask::Post(cfn, "UploadFinished");
->>>>>>> 5a105e0d2 (beautify home page)
     } else if (str::StartsWith(url, "Cmd")) {
         int cmdId = GetCommandIdByName(url);
         if (cmdId > 0) {

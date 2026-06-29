@@ -1407,102 +1407,103 @@ void LayoutHomePage(HomePageLayout& l) {
 }
 #endif
 
-    if(!gGlobalPrefs->homePageListView) {
-    if (showList) {
-        int listX = thumbsStartX;
-        if (isRtl) {
-            listX = rc.dx - thumbsStartX - thumbsContentWidth;
-        }
-        int listIconDx = l.rcIconListView.dx;
-        int listIconGap = DpiScale(hdc, 6);
-        int listSizeDx = DpiScale(hdc, 64);
-        for (int row = 0; row < nFiles; row++) {
-            ThumbnailLayout& thumb = *l.thumbnails.AppendBlanks(1);
-            FileState* fs = fileStates.at(row);
-            thumb.fs = fs;
-            Rect rcRow(listX, ptOff.y + row * kHomeListRowDy, thumbsContentWidth, kHomeListRowDy);
-            thumb.rcListRow = rcRow;
-            Rect rcThumb(rcRow.x, rcRow.y + (rcRow.dy - kHomeListThumbDy) / 2, kHomeListThumbDx, kHomeListThumbDy);
-            Rect rcPin(rcRow.x + rcRow.dx - listIconDx, rcRow.y + (rcRow.dy - listIconDx) / 2, listIconDx, listIconDx);
-            Rect rcRemove(rcPin.x - listIconGap - listIconDx, rcPin.y, listIconDx, listIconDx);
-            Rect rcSize(rcRemove.x - listIconGap - listSizeDx, rcRow.y, listSizeDx, rcRow.dy);
-            Rect rcFileName(rcThumb.x + rcThumb.dx + kHomeListRowGapDx, rcRow.y,
-                            rcSize.x - (rcThumb.x + rcThumb.dx + kHomeListRowGapDx) - kHomeListRowGapDx, rcRow.dy);
+    if (!gGlobalPrefs->homePageListView) {
+        if (showList) {
+            int listX = thumbsStartX;
             if (isRtl) {
-                rcThumb.x = rcRow.x + rcRow.dx - rcThumb.dx;
-                rcPin.x = rcRow.x;
-                rcRemove.x = rcPin.x + listIconDx + listIconGap;
-                rcSize.x = rcRemove.x + listIconDx + listIconGap;
-                rcFileName.x = rcSize.x + rcSize.dx + kHomeListRowGapDx;
-                rcFileName.dx = rcThumb.x - rcFileName.x - kHomeListRowGapDx;
+                listX = rc.dx - thumbsStartX - thumbsContentWidth;
             }
-            if (rcFileName.dx < 0) {
-                rcFileName.dx = 0;
-            }
-            thumb.rcListThumb = rcThumb;
-            thumb.rcListPin = rcPin;
-            thumb.rcListRemove = rcRemove;
-            thumb.rcListSize = rcSize;
-            thumb.rcListFileName = rcFileName;
-            RenderedBitmap* thumbImg = LoadThumbnail(fs);
-            if (thumbImg) {
-                thumb.szThumb = thumbImg->GetSize();
-            }
-            char* path = fs->filePath;
-            Rect slRect = rcRow.Intersect(l.rcThumbsArea);
-            if (!slRect.IsEmpty()) {
-                TempStr removeTarget = str::JoinTemp(kLinkHomeRemoveFilePrefix, path);
-                TempStr pinTarget = str::JoinTemp(kLinkHomePinFilePrefix, path);
-                const char* pinTip = fs->isPinned ? _TRA("Unpin") : _TRA("Pin");
-                win->staticLinks.Append(new StaticLink(rcRemove.Intersect(l.rcThumbsArea), removeTarget,
-                                                       _TRA("Remove from Frequently Read")));
-                win->staticLinks.Append(new StaticLink(rcPin.Intersect(l.rcThumbsArea), pinTarget, pinTip));
-                thumb.sl = new StaticLink(slRect, path, HomeThumbTooltipTemp(path));
-                win->staticLinks.Append(thumb.sl);
-            }
-        }
-    } else {
-        for (int row = 0; row < thumbsRows; row++) {
-            for (int col = 0; col < thumbsColsForLayout; col++) {
-                if (row * thumbsColsForLayout + col >= nFiles) {
-                    // no more files to display
-                    thumbsRows = col > 0 ? row + 1 : row;
-                    break;
-                }
+            int listIconDx = l.rcIconListView.dx;
+            int listIconGap = DpiScale(hdc, 6);
+            int listSizeDx = DpiScale(hdc, 64);
+            for (int row = 0; row < nFiles; row++) {
                 ThumbnailLayout& thumb = *l.thumbnails.AppendBlanks(1);
-                FileState* fs = fileStates.at(row * thumbsColsForLayout + col);
+                FileState* fs = fileStates.at(row);
                 thumb.fs = fs;
-
-                Rect rcPage(ptOff.x + col * (kThumbnailDx + kThumbsSpaceBetweenX),
-                            ptOff.y + row * (kThumbnailDy + kThumbsSpaceBetweenY), kThumbnailDx, kThumbnailDy);
+                Rect rcRow(listX, ptOff.y + row * kHomeListRowDy, thumbsContentWidth, kHomeListRowDy);
+                thumb.rcListRow = rcRow;
+                Rect rcThumb(rcRow.x, rcRow.y + (rcRow.dy - kHomeListThumbDy) / 2, kHomeListThumbDx, kHomeListThumbDy);
+                Rect rcPin(rcRow.x + rcRow.dx - listIconDx, rcRow.y + (rcRow.dy - listIconDx) / 2, listIconDx,
+                           listIconDx);
+                Rect rcRemove(rcPin.x - listIconGap - listIconDx, rcPin.y, listIconDx, listIconDx);
+                Rect rcSize(rcRemove.x - listIconGap - listSizeDx, rcRow.y, listSizeDx, rcRow.dy);
+                Rect rcFileName(rcThumb.x + rcThumb.dx + kHomeListRowGapDx, rcRow.y,
+                                rcSize.x - (rcThumb.x + rcThumb.dx + kHomeListRowGapDx) - kHomeListRowGapDx, rcRow.dy);
                 if (isRtl) {
-                    rcPage.x = rc.dx - rcPage.x - rcPage.dx;
+                    rcThumb.x = rcRow.x + rcRow.dx - rcThumb.dx;
+                    rcPin.x = rcRow.x;
+                    rcRemove.x = rcPin.x + listIconDx + listIconGap;
+                    rcSize.x = rcRemove.x + listIconDx + listIconGap;
+                    rcFileName.x = rcSize.x + rcSize.dx + kHomeListRowGapDx;
+                    rcFileName.dx = rcThumb.x - rcFileName.x - kHomeListRowGapDx;
                 }
+                if (rcFileName.dx < 0) {
+                    rcFileName.dx = 0;
+                }
+                thumb.rcListThumb = rcThumb;
+                thumb.rcListPin = rcPin;
+                thumb.rcListRemove = rcRemove;
+                thumb.rcListSize = rcSize;
+                thumb.rcListFileName = rcFileName;
                 RenderedBitmap* thumbImg = LoadThumbnail(fs);
                 if (thumbImg) {
-                    Size szThumb = thumbImg->GetSize();
-                    if (szThumb.dx != kThumbnailDx || szThumb.dy != kThumbnailDy) {
-                        rcPage.dy = szThumb.dy * kThumbnailDx / szThumb.dx;
-                        rcPage.y += kThumbnailDy - rcPage.dy;
-                    }
-                    thumb.szThumb = szThumb;
+                    thumb.szThumb = thumbImg->GetSize();
                 }
-                thumb.rcPage = rcPage;
-                int iconSpace = DpiScale(hdc, 20);
-                Rect rcText(rcPage.x + iconSpace, rcPage.y + rcPage.dy + 3, rcPage.dx - iconSpace, iconSpace);
-                if (isRtl) {
-                    rcText.x -= iconSpace;
-                }
-                thumb.rcText = rcText;
                 char* path = fs->filePath;
-                Rect slRect = rcText.Union(rcPage).Intersect(l.rcThumbsArea);
+                Rect slRect = rcRow.Intersect(l.rcThumbsArea);
                 if (!slRect.IsEmpty()) {
+                    TempStr removeTarget = str::JoinTemp(kLinkHomeRemoveFilePrefix, path);
+                    TempStr pinTarget = str::JoinTemp(kLinkHomePinFilePrefix, path);
+                    const char* pinTip = fs->isPinned ? _TRA("Unpin") : _TRA("Pin");
+                    win->staticLinks.Append(new StaticLink(rcRemove.Intersect(l.rcThumbsArea), removeTarget,
+                                                           _TRA("Remove from Frequently Read")));
+                    win->staticLinks.Append(new StaticLink(rcPin.Intersect(l.rcThumbsArea), pinTarget, pinTip));
                     thumb.sl = new StaticLink(slRect, path, HomeThumbTooltipTemp(path));
                     win->staticLinks.Append(thumb.sl);
                 }
             }
+        } else {
+            for (int row = 0; row < thumbsRows; row++) {
+                for (int col = 0; col < thumbsColsForLayout; col++) {
+                    if (row * thumbsColsForLayout + col >= nFiles) {
+                        // no more files to display
+                        thumbsRows = col > 0 ? row + 1 : row;
+                        break;
+                    }
+                    ThumbnailLayout& thumb = *l.thumbnails.AppendBlanks(1);
+                    FileState* fs = fileStates.at(row * thumbsColsForLayout + col);
+                    thumb.fs = fs;
+
+                    Rect rcPage(ptOff.x + col * (kThumbnailDx + kThumbsSpaceBetweenX),
+                                ptOff.y + row * (kThumbnailDy + kThumbsSpaceBetweenY), kThumbnailDx, kThumbnailDy);
+                    if (isRtl) {
+                        rcPage.x = rc.dx - rcPage.x - rcPage.dx;
+                    }
+                    RenderedBitmap* thumbImg = LoadThumbnail(fs);
+                    if (thumbImg) {
+                        Size szThumb = thumbImg->GetSize();
+                        if (szThumb.dx != kThumbnailDx || szThumb.dy != kThumbnailDy) {
+                            rcPage.dy = szThumb.dy * kThumbnailDx / szThumb.dx;
+                            rcPage.y += kThumbnailDy - rcPage.dy;
+                        }
+                        thumb.szThumb = szThumb;
+                    }
+                    thumb.rcPage = rcPage;
+                    int iconSpace = DpiScale(hdc, 20);
+                    Rect rcText(rcPage.x + iconSpace, rcPage.y + rcPage.dy + 3, rcPage.dx - iconSpace, iconSpace);
+                    if (isRtl) {
+                        rcText.x -= iconSpace;
+                    }
+                    thumb.rcText = rcText;
+                    char* path = fs->filePath;
+                    Rect slRect = rcText.Union(rcPage).Intersect(l.rcThumbsArea);
+                    if (!slRect.IsEmpty()) {
+                        thumb.sl = new StaticLink(slRect, path, HomeThumbTooltipTemp(path));
+                        win->staticLinks.Append(thumb.sl);
+                    }
+                }
+            }
         }
-    }
 
     } else {
         // 固定列宽
@@ -2023,26 +2024,14 @@ static void DrawHomePageLayout(HomePageLayout& l) {
         DeleteObject(thumbsClip);
     }
 
-<<<<<<< HEAD
-    if(!gGlobalPrefs->homePageListView) {
-    for (const ThumbnailLayout& thumb : l.thumbnails) {
-        FileState* fs = thumb.fs;
-        if (gGlobalPrefs->homePageShowList) {
-            DrawHomeListRow(l, thumb, fontText, backgroundColor, isRtl);
-            continue;
-        }
-        const Rect& page = thumb.rcPage;
-||||||| parent of 5255ff4c6 (add localsend client)
-    if(!gGlobalPrefs->homePageListView) {
-    for (const ThumbnailLayout& thumb : l.thumbnails) {
-        FileState* fs = thumb.fs;
-        const Rect& page = thumb.rcPage;
-=======
     if (!gGlobalPrefs->homePageListView) {
         for (const ThumbnailLayout& thumb : l.thumbnails) {
             FileState* fs = thumb.fs;
+            if (gGlobalPrefs->homePageShowList) {
+                DrawHomeListRow(l, thumb, fontText, backgroundColor, isRtl);
+                continue;
+            }
             const Rect& page = thumb.rcPage;
->>>>>>> 5255ff4c6 (add localsend client)
 
             RenderedBitmap* thumbImg = LoadThumbnail(fs);
             if (thumbImg) {
@@ -2065,99 +2054,47 @@ static void DrawHomePageLayout(HomePageLayout& l) {
             SelectObject(hdc, fontText);
             {
                 RECT rcText = {rect.x, rect.y, rect.x + rect.dx, rect.y + rect.dy};
-                DrawMaybeHighlightedTextArgs hlArgs(l.filterWords, l.highlighted);
-                hlArgs.hdc = hdc;
-                hlArgs.rc = rcText;
-                hlArgs.text = fileName;
-                hlArgs.colBg = backgroundColor;
-                hlArgs.isRtl = isRtl;
-                hlArgs.drawFmt = fmt;
-                DrawMaybeHighlightedText(hlArgs);
+                DrawMaybeHighlightedText(hdc, rcText, fileName, l.filterWords, l.highlighted, backgroundColor, isRtl,
+                                         false, fmt);
             }
 
             GetFileStateIcon(fs);
             int x = isRtl ? page.x + page.dx - DpiScale(hdc, 16) : page.x;
             ImageList_Draw(fs->himl, fs->iconIdx, hdc, x, rect.y, ILD_TRANSPARENT);
         }
-<<<<<<< HEAD
-        RoundRect(hdc, page.x, page.y, page.x + page.dx, page.y + page.dy, 10, 10);
-
-        const Rect& rect = thumb.rcText;
-        char* path = fs->filePath;
-        TempStr fileName = path::GetBaseNameTemp(path);
-        UINT fmt = DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX | (isRtl ? DT_RIGHT : DT_LEFT);
-
-        SelectObject(hdc, fontText);
-        {
-            RECT rcText = {rect.x, rect.y, rect.x + rect.dx, rect.y + rect.dy};
-            DrawMaybeHighlightedText(hdc, rcText, fileName, l.filterWords, l.highlighted, backgroundColor, isRtl, false,
-                                     fmt);
-        }
-
-        GetFileStateIcon(fs);
-        int x = isRtl ? page.x + page.dx - DpiScale(hdc, 16) : page.x;
-        ImageList_Draw(fs->himl, fs->iconIdx, hdc, x, rect.y, ILD_TRANSPARENT);
-    }
-||||||| parent of 5255ff4c6 (add localsend client)
-        RoundRect(hdc, page.x, page.y, page.x + page.dx, page.y + page.dy, 10, 10);
-
-        const Rect& rect = thumb.rcText;
-        char* path = fs->filePath;
-        TempStr fileName = path::GetBaseNameTemp(path);
-        UINT fmt = DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX | (isRtl ? DT_RIGHT : DT_LEFT);
-
-        SelectObject(hdc, fontText);
-        {
-            RECT rcText = {rect.x, rect.y, rect.x + rect.dx, rect.y + rect.dy};
-            DrawMaybeHighlightedTextArgs hlArgs(l.filterWords, l.highlighted);
-            hlArgs.hdc = hdc;
-            hlArgs.rc = rcText;
-            hlArgs.text = fileName;
-            hlArgs.colBg = backgroundColor;
-            hlArgs.isRtl = isRtl;
-            hlArgs.drawFmt = fmt;
-            DrawMaybeHighlightedText(hlArgs);
-        }
-
-        GetFileStateIcon(fs);
-        int x = isRtl ? page.x + page.dx - DpiScale(hdc, 16) : page.x;
-        ImageList_Draw(fs->himl, fs->iconIdx, hdc, x, rect.y, ILD_TRANSPARENT);
-    }
-=======
->>>>>>> 5255ff4c6 (add localsend client)
     } else {
-#if 0
-        if (win->homePageSelectedFiles.Size() > 0) {
-            UINT rfmt = DT_SINGLELINE | DT_END_ELLIPSIS | DT_VCENTER | DT_NOPREFIX;
-            for (const FileListRow& row : l.rows) {
-                FileState* fs = row.fs;
-                // 第一列：完整文件路径（带省略号）
-                char* ip = gGlobalPrefs->remoteIp;
-                // TempStr fpath = str::FormatTemp("%s(ip:%s)", fs->filePath, ip);
-                TempStr fpath = str::FormatTemp("%s", fs->filePath);
-                HdcDrawText(hdc, fpath, row.rcPath, rfmt | DT_LEFT, fontText);
-                // 第二列：当前页 / 总页数
-                // TempStr pageStr = str::FormatTemp("%d / %d", fs->pageNo, fs->totalPages);
-                // HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
-                // 第三列：阅读百分比
-                i64 sz = file::GetSize(fs->filePath);
-                TempStr szStr = (sz >= 0) ? FormatSizeShortTransTemp(sz) : str::DupTemp("—");
-                TempStr pageStr = str::FormatTemp("%d / %s", fs->pageNo, szStr);
-                HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
-
-                // int pct = (fs->totalPages > 0) ? (fs->pageNo * 100 / fs->totalPages) : 0;
-                int pct = (sz > 0) ? (fs->pageNo * 100 / sz) : 0;
-                TempStr pctStr = str::FormatTemp("%d%%", pct);
-                HdcDrawText(hdc, pctStr, row.rcPercent, rfmt | DT_RIGHT, fontText);
-                // 第四列：文件大小
-                // i64 sz = file::GetSize(fs->filePath);
-                // TempStr szStr = (sz >= 0) ? FormatSizeShortTransTemp(sz) : str::DupTemp("—");
-                // HdcDrawText(hdc, szStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
-                TempStr finishStr = (fs->pageNo == sz) ? str::DupTemp("✅ 完成") : str::DupTemp("⏳ 传输中");
-                HdcDrawText(hdc, finishStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
-            }
-        } else {
-#endif
+        // #if 0
+        //         if (win->homePageSelectedFiles.Size() > 0) {
+        //             UINT rfmt = DT_SINGLELINE | DT_END_ELLIPSIS | DT_VCENTER | DT_NOPREFIX;
+        //             for (const FileListRow& row : l.rows) {
+        //                 FileState* fs = row.fs;
+        //                 // 第一列：完整文件路径（带省略号）
+        //                 char* ip = gGlobalPrefs->remoteIp;
+        //                 // TempStr fpath = str::FormatTemp("%s(ip:%s)", fs->filePath, ip);
+        //                 TempStr fpath = str::FormatTemp("%s", fs->filePath);
+        //                 HdcDrawText(hdc, fpath, row.rcPath, rfmt | DT_LEFT, fontText);
+        //                 // 第二列：当前页 / 总页数
+        //                 // TempStr pageStr = str::FormatTemp("%d / %d", fs->pageNo, fs->totalPages);
+        //                 // HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
+        //                 // 第三列：阅读百分比
+        //                 i64 sz = file::GetSize(fs->filePath);
+        //                 TempStr szStr = (sz >= 0) ? FormatSizeShortTransTemp(sz) : str::DupTemp("—");
+        //                 TempStr pageStr = str::FormatTemp("%d / %s", fs->pageNo, szStr);
+        //                 HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
+        //
+        //                 // int pct = (fs->totalPages > 0) ? (fs->pageNo * 100 / fs->totalPages) : 0;
+        //                 int pct = (sz > 0) ? (fs->pageNo * 100 / sz) : 0;
+        //                 TempStr pctStr = str::FormatTemp("%d%%", pct);
+        //                 HdcDrawText(hdc, pctStr, row.rcPercent, rfmt | DT_RIGHT, fontText);
+        //                 // 第四列：文件大小
+        //                 // i64 sz = file::GetSize(fs->filePath);
+        //                 // TempStr szStr = (sz >= 0) ? FormatSizeShortTransTemp(sz) : str::DupTemp("—");
+        //                 // HdcDrawText(hdc, szStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
+        //                 TempStr finishStr = (fs->pageNo == sz) ? str::DupTemp("✅ 完成") : str::DupTemp("⏳
+        //                 传输中"); HdcDrawText(hdc, finishStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
+        //             }
+        //         } else {
+        // #endif
         UINT rfmt = DT_SINGLELINE | DT_END_ELLIPSIS | DT_VCENTER | DT_NOPREFIX;
         for (const FileListRow& row : l.rows) {
             FileState* fs = row.fs;

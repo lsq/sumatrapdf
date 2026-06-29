@@ -980,8 +980,8 @@
     <ClCompile Include="..\src\utils\tests\HtmlPrettyPrint_ut.cpp" />
     <ClCompile Include="..\src\utils\tests\HtmlPullParser_ut.cpp" />
     <ClCompile Include="..\src\utils\tests\JsonParser_ut.cpp" />
-    <ClCompile Include="..\src\utils\tests\RefHover_ut.cpp" />
     <ClCompile Include="..\src\utils\tests\LocalSend_ut.cpp" />
+    <ClCompile Include="..\src\utils\tests\RefHover_ut.cpp" />
     <ClCompile Include="..\src\utils\tests\SettingsUtil_ut.cpp" />
     <ClCompile Include="..\src\utils\tests\SimpleLog_ut.cpp" />
     <ClCompile Include="..\src\utils\tests\SquareTreeParser_ut.cpp" />

@@ -13,41 +13,57 @@ echo "---"
 
 has_conflict=0
 
-comm -12 \
-  <(git diff --name-only "$BASE" HEAD | sort) \
-  <(git diff --name-only "$BASE" "$REMOTE" | sort) | \
+# ✅ 预计算冲突文件集合，用于后续 O(1) 查找
+declare -A CONFLICT_FILES
 while IFS= read -r f; do
   [ -z "$f" ] && continue
-
-  # 使用三路 diff 检查：如果两边对同一区域的改动不同，则冲突
   if ! git merge-file -p \
       <(git show "$BASE:$f" 2>/dev/null) \
       <(git show "HEAD:$f" 2>/dev/null) \
       <(git show "$REMOTE:$f" 2>/dev/null) > /dev/null 2>&1; then
- 
-    echo "❌ $f"
- 
-    # ✅ 新增：为冲突文件生成 HEAD vs BASE 的补丁
-    mkdir -p "$PATCH_DIR"
-    patch_file="$PATCH_DIR/$(echo "$f" | tr '/' '_').patch"
-    if git diff "$BASE" HEAD -- "$f" > "$patch_file" 2>/dev/null; then
-      # echo "   📝 Patch generated: $patch_file"
-      # printf "❌ "
-      printf ""
-    else
-      echo "   ⚠️  Failed to generate patch for $f"
-    fi
- 
-    has_conflict=1
-  else
-    echo "✅ $f (auto-mergeable)"
+    CONFLICT_FILES["$f"]=1
   fi
-done
+done < <(comm -12 \
+  <(git diff --name-only "$BASE" HEAD | sort) \
+  <(git diff --name-only "$BASE" "$REMOTE" | sort))
+
+# ✅ 遍历 HEAD 相对于 BASE 的【所有】变更文件
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+
+  mkdir -p "$PATCH_DIR"
+  patch_file="$(echo "$f" | tr '/' '_').patch"
+
+  # ✅ 根据是否在冲突集合中决定标签
+  if [[ -v "CONFLICT_FILES[$f]" ]]; then
+    echo "❌ $f"
+    # echo "   📝 Conflict patch: $patch_file"
+    has_conflict=1
+    patch_file="$PATCH_DIR/c_${patch_file}"
+  else
+    # echo "✅ $f (auto-mergeable)"
+    # echo "   📝 Clean patch: $patch_file"
+    patch_file="$PATCH_DIR/a_${patch_file}"
+  fi
+
+  # 生成补丁（加 --binary 支持二进制文件）
+  if git diff --binary "$BASE" HEAD -- "$f" > "$patch_file" 2>/dev/null; then
+    # 清理空补丁（例如仅权限变更等极端情况）
+    [ -s "$patch_file" ] || rm -f "$patch_file"
+  else
+    echo "   ⚠️  Failed to generate patch for $f"
+    continue
+  fi
+ 
+done < <(git diff --name-only "$BASE" HEAD | sort)
 
 echo "---"
 if [ "$has_conflict" == 1 ]; then
-  echo "💡 Conflict patches saved to: $PATCH_DIR/"
+  echo "💡 Patches saved to: $PATCH_DIR/"
   echo "   Apply with: git apply $PATCH_DIR/<file>.patch"
 else
   echo "🎉 No conflicts detected!"
+  if [ -d "$PATCH_DIR" ]; then
+    echo "💡 Clean patches saved to: $PATCH_DIR/"
+  fi
 fi

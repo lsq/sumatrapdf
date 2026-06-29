@@ -388,7 +388,7 @@ struct IpInfoDeserializer : json::ValueVisitor {
             const char* fieldName = slash + 1;
 
             // 查找或创建 ServerConfig 条目
-            int idx = out->ipPool.Find(StrSpan(ipKey));
+            int idx = out->ipPool.Find(ipKey, 0);
             if (idx < 0) {
                 ServerConfig sc{};
                 out->ipPool.Append(ipKey, sc);

@@ -1,4 +1,5 @@
 #include "utils/protocol/Models.h"
+#include "common/common.h"
 #include "utils/BaseUtil.h"
 #include "utils/JsonParser.h"
 
@@ -220,7 +221,7 @@ TempStr UploadInfoToJson(const UploadInfo* up) {
 
     out.Append("}");
 
-    return out.StealData(GetTempAllocator()); // 调用方负责 free
+    return out.StealData(GetTempArena()); // 调用方负责 free
 }
 
 TempStr BuildPrepareUpload(const DeviceInfo* info, const StrVecWithData<FileMetadata*>* files) {
@@ -300,7 +301,7 @@ struct PrepareUploadInfoDeserializer : json::ValueVisitor {
             // const char* fieldName = slash + 1;
 
             // 查找或创建 ServerConfig 条目
-            int idx = out->fileTokens.Find(StrSpan(fileId));
+            int idx = out->fileTokens.Find(fileId, 0);
             if (idx < 0) {
                 char* st = str::Dup(value);
                 out->fileTokens.Append(fileId, st);

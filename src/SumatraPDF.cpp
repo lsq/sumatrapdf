@@ -4848,7 +4848,7 @@ static void UploadTask(UploadTaskData* d) {
 
     free(d->serverA);
     free(d->urlA);
-    DestroyTempAllocator();
+    DestroyTempArena();
 }
 
 static void UploadFiles(MainWindow* win) {

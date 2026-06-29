@@ -215,8 +215,8 @@ static TempStr GetNewPdfPreviewLogFilePathTemp() {
     // unique part: pid plus low bits of tick, so concurrent preview hosts that
     // start in the same minute don't collide
     DWORD uniq = (GetCurrentProcessId() << 16) ^ (GetTickCount() & 0xffff);
-    TempStr name = str::FormatTemp("%s%02d-%02d.%02d-%02d.%08x.txt", kPdfPreviewLogPrefix, (int)st.wMonth,
-                                   (int)st.wDay, (int)st.wHour, (int)st.wMinute, uniq);
+    TempStr name = str::FormatTemp("%s%02d-%02d.%02d-%02d.%08x.txt", kPdfPreviewLogPrefix, (int)st.wMonth, (int)st.wDay,
+                                   (int)st.wHour, (int)st.wMinute, uniq);
     return path::JoinTemp(dir, name);
 }
 

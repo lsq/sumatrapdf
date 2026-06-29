@@ -3,6 +3,7 @@
 
 #include "BaseUtil.h"
 #include "StrFormat.h"
+#include "common/common.h"
 
 #if !defined(_MSC_VER)
 #define _strdup strdup
@@ -2699,7 +2700,7 @@ TempStr UrlEncodeTemp(const char* s) {
             out.AppendFmt("%%%02X", (unsigned int)c);
         }
     }
-    return out.StealData(GetTempAllocator());
+    return out.StealData(GetTempArena());
 }
 } // namespace url
 

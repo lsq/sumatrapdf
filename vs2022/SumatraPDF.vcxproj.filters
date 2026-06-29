@@ -860,6 +860,9 @@
     <ClCompile Include="..\src\utils\tests\JsonParser_ut.cpp">
       <Filter>src\utils\tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\utils\tests\LocalSend_ut.cpp">
+      <Filter>src\utils\tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\utils\tests\RefHover_ut.cpp">
       <Filter>src\utils\tests</Filter>
     </ClCompile>

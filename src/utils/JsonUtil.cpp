@@ -1,3 +1,4 @@
+// #include "common/common.h"
 #include "utils/BaseUtil.h"
 #include "utils/SettingsUtil.h"
 #include "utils/JsonParser.h"
@@ -142,7 +143,7 @@ struct JsonStructVisitor : json::ValueVisitor {
             prefixBuf.Append(pathSoFar);
             prefixBuf.AppendChar('/');
             prefixBuf.Append(seg.Get());
-            TempStr prefix = prefixBuf.StealData(GetTempAllocator());
+            TempStr prefix = prefixBuf.StealData(GetTempArena());
 
             Vec<void*>** vecPtr = (Vec<void*>**)(base + f.offset);
             ArraySlot* slot = GetOrCreateSlot(prefix, vecPtr, SubInfo(f));
@@ -167,7 +168,7 @@ struct JsonStructVisitor : json::ValueVisitor {
             prefixBuf.Append(pathSoFar);
             prefixBuf.AppendChar('/');
             prefixBuf.Append(seg.Get());
-            TempStr prefix = prefixBuf.StealData(GetTempAllocator());
+            TempStr prefix = prefixBuf.StealData(GetTempArena());
 
             u8* subBase = base + f.offset;
             VisitPath(rest, value, jtype, SubInfo(f), subBase, prefix);

@@ -263,7 +263,7 @@ enum {
     CmdToggleToolbarPosition = 452,
     CmdToggleDjvuEngine = 453,
     CmdSendToRemote = 454,
-    CmdOpenHomePage= 455,
+    CmdOpenHomePage = 455,
     CmdNone = 456,
 
     /* range for file history */

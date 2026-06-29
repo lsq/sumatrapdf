@@ -99,8 +99,10 @@
     <ClInclude Include="..\src\utils\JsonParser.h">
       <Filter>utils</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\utils\JxlReader.h">
     <ClInclude Include="..\src\utils\JsonUtil.h">
+      <Filter>utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\JxlReader.h">
       <Filter>utils</Filter>
     </ClInclude>
     <ClInclude Include="..\src\utils\LocalSend.h">
@@ -288,15 +290,13 @@
     <ClCompile Include="..\src\utils\JsonParser.cpp">
       <Filter>utils</Filter>
     </ClCompile>
-<<<<<<< HEAD
-    <ClCompile Include="..\src\utils\JxlReader.cpp">
-||||||| parent of 5255ff4c6 (add localsend client)
-=======
     <ClCompile Include="..\src\utils\JsonUtil.cpp">
       <Filter>utils</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\utils\JxlReader.cpp">
+      <Filter>utils</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\utils\LocalSend.cpp">
->>>>>>> 5255ff4c6 (add localsend client)
       <Filter>utils</Filter>
     </ClCompile>
     <ClCompile Include="..\src\utils\Log.cpp">
