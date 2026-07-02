@@ -1,14 +1,13 @@
-#include "utils/client/UploadSession.h"
-#include "common/common.h"
-#include "utils/BaseUtil.h"
-#include "utils/StrUtil.h"
-#include "utils/StrQueue.h"
-#include "utils/Dict.h"
-#include "utils/ThreadUtil.h"
-#include "utils/net/IHttpClient.h"
-#include "utils/net/HttpClient.h"
-#include "utils/protocol/Constants.h"
-#include "utils/protocol/Models.h"
+#include "base/client/UploadSession.h"
+#include "base/Base.h"
+// #include "base/StrUtil.h"
+#include "base/StrQueue.h"
+#include "base/Dict.h"
+#include "base/Thread.h"
+#include "base/net/IHttpClient.h"
+#include "base/net/HttpClient.h"
+#include "base/protocol/Constants.h"
+#include "base/protocol/Models.h"
 
 namespace LocalSend {
 
@@ -25,7 +24,7 @@ UploadSession::UploadSession(IHttpClient& http, DeviceInfo* info) : fHttp(http),
 // Separa file accettati e rifiutati.
 struct UploadTask {
     const FileMetadata* file = nullptr;
-    char* token = nullptr;
+    Str token = nullptr;
     FileOutcome outcome;
 };
 
@@ -43,8 +42,8 @@ const char* StatusText(FileOutcome::Status s) {
 
 struct UploadWorkerCtx {
     StrQueue* queue;
-    const char* sessionId;
-    const char* host;
+    Str sessionId;
+    Str host;
     int port;
     int chunkSize;
     UploadProgress* uprogress;
@@ -54,8 +53,8 @@ struct UploadWorkerCtx {
 
 static void UploadWorkerThread(UploadWorkerCtx* t) {
     for (;;) {
-        char* path = t->queue->PopFront();
-        if (!path) {
+        Str path = t->queue->PopFront();
+        if (!path || !path.s) {
             // Stop() 触发，立即退出
             break;
         }
@@ -67,32 +66,31 @@ static void UploadWorkerThread(UploadWorkerCtx* t) {
         int tsi = 0;
         bool getOr = t->tasksSet->Get(path, &tsi);
         if (!getOr) {
-            printf("tasksSet cannot find path: %s\n", path);
-            free(path);
+            printf("tasksSet cannot find path: %s\n", path.s);
+            // str::Free(path);
             continue;
         }
         UploadTask* ts = &(t->uts->At(tsi));
 
         // 找到对应的 FileUploadState（按路径匹配）
         FileUploadState* fstate = nullptr;
-        for (int i = 0; i < t->uprogress->fileStates.Size(); i++) {
+        for (int i = 0; i < len(t->uprogress->fileStates); i++) {
             if (str::Eq(t->uprogress->fileStates[i]->filePath, path)) {
                 fstate = t->uprogress->fileStates[i];
                 break;
             }
         }
         if (!fstate) {
-            free(path);
+            // str::Free(path);
             continue;
         }
 
         fstate->isActive = true;
 
-        TempStr tToken = url::UrlEncodeTemp(ts->token);
-        TempStr tSessionId = url::UrlEncodeTemp(t->sessionId);
-        TempStr tFileId = url::UrlEncodeTemp(ts->file->id);
-        TempStr urlPath =
-            str::FormatTemp("%s?sessionId=%s&fileId=%s&token=%s", kApiUpload, tSessionId, tFileId, tToken);
+        TempStr tToken = url::UrlEncodeTemp((ts->token).s);
+        TempStr tSessionId = url::UrlEncodeTemp((t->sessionId).s);
+        TempStr tFileId = url::UrlEncodeTemp((ts->file->id).s);
+        TempStr urlPath = fmt("%s?sessionId=%s&fileId=%s&token=%s", TempStr(kApiUpload), tSessionId, tFileId, tToken);
 
         PerChunkCbArgs cbArgs{fstate, t->uprogress};
         auto perChunkCb = MkFunc1(
@@ -110,10 +108,10 @@ static void UploadWorkerThread(UploadWorkerCtx* t) {
                 }
             },
             &cbArgs);
-
+        // bool bugO = _CrtCheckMemory();
         HttpClient http;
-        StrBuilder header("");
-        header.AppendFmt("Content-Type: %s\r\n", ts->file->fileType);
+        str::Builder header("");
+        header.Append(fmt("Content-Type: %s\r\n", ts->file->fileType));
         HttpResponse up =
             http.PostFile(t->host, t->port, urlPath, &header, ts->file->localPath, 4, t->chunkSize, perChunkCb);
         bool ok = up.IsOk();
@@ -122,8 +120,8 @@ static void UploadWorkerThread(UploadWorkerCtx* t) {
             // sentBytes.Add(ts->file->size);
         } else {
             ts->outcome.status = FileOutcome::Status::Error;
-            ts->outcome.detail = up.httpStatusCode == -1 ? str::Dup("connessione/IO fallita")
-                                                         : str::Format("HTTP %d", up.httpStatusCode);
+            ts->outcome.detail =
+                up.httpStatusCode == -1 ? StrL("connessione/IO fallita") : str::Dup(fmt("HTTP %d", up.httpStatusCode));
             // anyError = true;
         }
 
@@ -137,20 +135,20 @@ static void UploadWorkerThread(UploadWorkerCtx* t) {
         // 完成后再触发一次回调，通知文件级状态变化
         t->uprogress->cbProgress.Call(t->uprogress);
 
-        free(path);
+        // str::Free(path);
     }
     DestroyTempArena();
 };
 
-void UploadSession::Cancel(const char* host, int port, const char* sessionId) {
-    StrBuilder body("");
-    StrBuilder headers("Content-Type: application/json\r\n");
-    char* path = str::Format("%s?sessionId=%s", kApiCancel, url::UrlEncodeTemp(sessionId));
+void UploadSession::Cancel(Str host, int port, Str sessionId) {
+    str::Builder body("");
+    str::Builder headers("Content-Type: application/json\r\n");
+    TempStr path = fmt("%s?sessionId=%s", TempStr(kApiCancel), url::UrlEncodeTemp(sessionId.s));
     fHttp.Post(host, port, path, &headers, &body);
-    free(path);
+    str::Free(path);
 }
 
-SendReport UploadSession::Send(const char* host, int port, int workerCount, int chunkSize,
+SendReport UploadSession::Send(Str host, int port, int workerCount, int chunkSize,
                                const StrVecWithData<FileMetadata*>* files, // const std::string& pin,
                                const Func1<UploadProgress*>& progress) {
     SendReport report;
@@ -160,8 +158,8 @@ SendReport UploadSession::Send(const char* host, int port, int workerCount, int 
     // if (!pin.empty())
     // 	preparePath += "?pin=" + UrlEncode(pin);
 
-    StrBuilder body(BuildPrepareUpload(fInfo, files));
-    StrBuilder headers("Content-Type: application/json\r\nAccept: application/json\r\n");
+    str::Builder body(BuildPrepareUpload(fInfo, files));
+    str::Builder headers("Content-Type: application/json\r\nAccept: application/json\r\n");
     HttpResponse resp = fHttp.Post(host, port, preparePath, &headers, &body);
     report.prepareStatus = (int)resp.httpStatusCode;
 
@@ -178,7 +176,8 @@ SendReport UploadSession::Send(const char* host, int port, int workerCount, int 
     }
 
     PrepareUploadResult prep;
-    TempStr uploadData = resp.data.StealData(GetTempArena());
+    TempStr uploadData = ToStrTemp(resp.data);
+    // printf("UploadSession::Send uploadData:%s\n", uploadData.s);
     if (!ParsePrepareUploadResponse(uploadData, &prep)) {
         return report;
     };
@@ -213,8 +212,8 @@ SendReport UploadSession::Send(const char* host, int port, int workerCount, int 
     StrVec filePaths;
     // dict::MapStrToInt tasksSet;
     // for (const auto& it : *files) {
-    for (int i = 0, j = 0; i < files->Size(); i++) {
-        const char* it = files->At(i);
+    for (int i = 0, j = 0; i < len(*files); i++) {
+        Str it = files->At(i);
         FileMetadata* f = *files->AtData(i);
 
         int idx = prep.fileTokens.Find(it);
@@ -236,7 +235,7 @@ SendReport UploadSession::Send(const char* host, int port, int workerCount, int 
             i64 sz = f->size;
             uprogress->nTotal += 1;
             auto* fs = new FileUploadState();
-            fs->filePath = f->localPath;
+            fs->filePath = str::Dup(f->localPath).s;
             fs->totalBytes = sz;
             if (fs->totalBytes > 0) {
                 uprogress->totalBytes += sz;
@@ -254,7 +253,7 @@ SendReport UploadSession::Send(const char* host, int port, int workerCount, int 
     // AtomicInt64 sentBytes(0);
     // bool anyError = false;
 
-    int n = tasks.Size();
+    int n = len(tasks);
     if (n == 0) return report;
 
     if (workerCount > n) {
@@ -285,14 +284,14 @@ SendReport UploadSession::Send(const char* host, int port, int workerCount, int 
         if (queue->IsStopped()) {
             break;
         }
-        queue->Append(filePaths.At(i));
+        queue->append(filePaths.At(i));
     }
     if (!queue->IsFinished()) {
         queue->MarkFinished();
     }
 
     // 等待所有工作线程退出
-    for (int i = 0; i < hThreads.Size(); i++) {
+    for (int i = 0; i < len(hThreads); i++) {
         HANDLE h = hThreads[i];
         WaitForSingleObject(h, INFINITE);
         SafeCloseHandle(&h);

@@ -1,23 +1,24 @@
-#include "utils/BaseUtil.h"
-#include "utils/FileUtil.h"
-#include "utils/client/UploadSession.h"
-#include "utils/net/IHttpClient.h"
-#include "utils/protocol/Constants.h"
-#include "utils/client/FileSource.h"
-#include "utils/protocol/Fingerprint.h"
-#include "utils/protocol/Models.h"
-#include "utils/net/HttpClient.h"
-#include "utils/Log.h"
+#include "base/Base.h"
+#include "base/File.h"
+#include "base/client/UploadSession.h"
+#include "base/net/IHttpClient.h"
+#include "base/protocol/Constants.h"
+#include "base/client/FileSource.h"
+#include "base/protocol/Fingerprint.h"
+#include "base/protocol/Models.h"
+#include "base/net/HttpClient.h"
+#include "base/Log.h"
+#include "base/Win.h"
 
 using namespace LocalSend;
 
 bool ToRelativePaths(StrVec& absPaths, StrVec& relPaths) {
-    if (absPaths.Size() < 2) {
+    if (len(absPaths) < 2) {
         return false;
     }
 
     TempStr base = str::DupTemp(absPaths.At(0));
-    int bLen = str::Leni(base);
+    int bLen = len(base);
     // if (!str::IsEmpty(base) && base[bLen-1] != '\\' && base[bLen-1] != '/') {
     //     base = str::FormatTemp("%s\\", base);
     //     bLen = str::Leni(base);
@@ -25,13 +26,13 @@ bool ToRelativePaths(StrVec& absPaths, StrVec& relPaths) {
 
     if (!dir::Exists(base)) return false;
 
-    for (int i = 1; i < absPaths.Size(); i++) {
-        const char* fullPath = absPaths[i];
+    for (int i = 1; i < len(absPaths); i++) {
+        Str fullPath = absPaths[i];
         if (!str::StartsWithI(fullPath, base)) {
             return false;
         }
 
-        const char* rel = fullPath + bLen;
+        const char* rel = fullPath.s + bLen;
         if (path::IsSep(*rel)) {
             rel++;
         }
@@ -40,15 +41,15 @@ bool ToRelativePaths(StrVec& absPaths, StrVec& relPaths) {
     return true;
 }
 
-TempStr GetRelativeTemp(const char* basePath, const char* absPath) {
-    int bLen = str::Leni(basePath);
+TempStr GetRelativeTemp(Str basePath, Str absPath) {
+    int bLen = len(basePath);
     if (!dir::Exists(basePath)) return nullptr;
 
     if (!str::StartsWithI(absPath, basePath)) {
         return nullptr;
     }
 
-    const char* rel = absPath + bLen;
+    const char* rel = absPath.s + bLen;
     if (path::IsSep(*rel)) {
         rel++;
     }
@@ -59,9 +60,9 @@ TempStr GetRelativeTemp(const char* basePath, const char* absPath) {
 // 1. 生成带 .pdf 后缀的新文件名列表
 StrVec GeneratePdfNames(const StrVec& fileList) {
     StrVec pdfNames;
-    for (int i = 0; i < fileList.Size(); i++) {
+    for (int i = 0; i < len(fileList); i++) {
         // str::Format 或类似拼接函数，根据实际框架调整
-        TempStr newName = str::FormatTemp("%s.pdf", fileList.At(i));
+        TempStr newName = fmt("%s.pdf", fileList.At(i));
         pdfNames.Append(newName);
         // free(newName); // 如果 Format 返回的是堆内存且 Append 会深拷贝
     }
@@ -74,9 +75,9 @@ bool RenameFiles(const StrVec& src, const StrVec& dst, bool forward) {
     const StrVec& from = forward ? src : dst;
     const StrVec& to = forward ? dst : src;
 
-    if (from.Size() != to.Size()) return false;
+    if (len(from) != len(to)) return false;
 
-    for (int i = 0; i < from.Size(); i++) {
+    for (int i = 0; i < len(from); i++) {
         if (!file::Rename(to.At(i), from.At(i))) {
             // ⚠️ 部分失败时的回滚策略：
             // 将已经成功重命名的文件还原回去
@@ -97,15 +98,15 @@ struct TempRenameGuard {
 
     // fileList: 绝对路径列表
     // basePath: 计算相对路径的基准目录（必须为绝对路径）
-    explicit TempRenameGuard(const StrVec& fileList, const char* basePath) {
-        for (int i = 0; i < fileList.Size(); i++) {
-            const char* absPath = fileList.At(i);
+    explicit TempRenameGuard(const StrVec& fileList, Str basePath) {
+        for (int i = 0; i < len(fileList); i++) {
+            Str absPath = fileList.At(i);
 
             // 1. 保存原始绝对路径
             origAbsPaths.Append(absPath);
 
             // 2. 生成带 .pdf 后缀的绝对路径
-            TempStr pdfPath = str::FormatTemp("%s.pdf", absPath);
+            TempStr pdfPath = fmt("%s.pdf", absPath);
             pdfAbsPaths.Append(pdfPath);
             // free(pdfPath);
 
@@ -116,10 +117,10 @@ struct TempRenameGuard {
     }
 
     bool Enter() {
-        if (origAbsPaths.Size() != pdfAbsPaths.Size()) return false;
+        if (len(origAbsPaths) != len(pdfAbsPaths)) return false;
 
         // 预检查：防止覆盖已存在的 .pdf 文件
-        for (int i = 0; i < pdfAbsPaths.Size(); i++) {
+        for (int i = 0; i < len(pdfAbsPaths); i++) {
             if (file::Exists(pdfAbsPaths.At(i))) {
                 logf("TempRenameGuard: target already exists: %s", pdfAbsPaths.At(i));
                 return false;
@@ -146,9 +147,9 @@ struct TempRenameGuard {
     TempRenameGuard& operator=(const TempRenameGuard&) = delete;
 };
 
-int LocalSender(const char* host, StrVec& p, const Func1<UploadProgress*>& cbProgress) {
+int LocalSender(Str host, StrVec& p, const Func1<UploadProgress*>& cbProgress) {
     int port = kDefaultPort;
-    char* alias = str::Dup("Honey Ratel");
+    Str alias = str::Dup("Honey Ratel");
     StrVec fileList;
     // if (!ToRelativePaths(p, fileList)) {
     //     logf("Error: ToRelativePaths failed!\n");
@@ -156,11 +157,10 @@ int LocalSender(const char* host, StrVec& p, const Func1<UploadProgress*>& cbPro
     //     return 1;
     // }
     SliceFirst(p, fileList);
-    const char* basePath = p.At(0);
+    Str basePath = p.At(0);
 
     StrVec* paths = &fileList;
     if (paths->IsEmpty()) {
-        free(alias);
         return 1;
     }
 
@@ -173,9 +173,9 @@ int LocalSender(const char* host, StrVec& p, const Func1<UploadProgress*>& cbPro
     }
 
     StrVecWithData<FileMetadata*> fileMetas;
-    for (int i = 0; i < paths->Size(); ++i) {
+    for (int i = 0; i < len(*paths); ++i) {
         FileMetadata* m = (FileMetadata*)DeserializeStruct(&gFileMetadataInfo, nullptr);
-        char* id = str::Format("file-%d", i + 1);
+        Str id = str::Dup(fmt("file-%d", i + 1));
         if (!BuildFileMetadata(pdfPaths.At(i), relPaths.At(i), id, m)) {
             logf("Error: BuildFileMetadata(%s) failed!\n", paths->At(i));
             return 1;
@@ -186,7 +186,9 @@ int LocalSender(const char* host, StrVec& p, const Func1<UploadProgress*>& cbPro
     DeviceInfo* info = (DeviceInfo*)DeserializeStruct(&gDeviceInfoInfo, nullptr);
     info->alias = alias;
     info->port = port;
-    info->fingerprint = LoadOrCreateFingerprint("./localsend_fingerprint");
+    TempStr exeDir = GetSelfExeDirTemp();
+    TempStr fingerprintPath = path::JoinTemp(exeDir, "localsend_fingerprint");
+    info->fingerprint = LoadOrCreateFingerprint(fingerprintPath);
 
     HttpClient http;
 
@@ -221,23 +223,27 @@ int LocalSender(const char* host, StrVec& p, const Func1<UploadProgress*>& cbPro
                 hint = " (Unknown error by receiver)";
                 break;
         }
-        logf("prepare-upload fallito: HTTP %d%s\n", report.prepareStatus, hint);
+        if (-1 == report.prepareStatus) {
+            logf("Please turn off LocalSend app's https, ensuring transfering from http\n");
+        }
+        logf("prepare-upload fallito: HTTP %d%s\n", report.prepareStatus, TempStr(hint));
         // return 1;
     }
 
     logf("Sessione: %s\n", report.sessionId);
     for (const auto& f : report.files) {
-        logf("  [%-9s] %s%s%s\n", StatusText(f.status), f.fileName, str::IsEmpty(f.detail) ? "" : "  -> ", f.detail);
-        free(f.detail);
+        logf("  [%-9s] %s%s%s\n", TempStr(StatusText(f.status)), f.fileName,
+             TempStr(str::IsEmpty(f.detail) ? "" : "  -> "), f.detail);
+        str::Free(f.detail);
     }
 
-    logf("report->AllSent: %s\n", report.AllSent() ? "true" : "false");
+    logf("report->AllSent: %s\n", report.AllSent() ? TempStr("true") : TempStr("false"));
     if (report.sessionId) {
         str::Free(report.sessionId);
     }
     FreeStruct(&gDeviceInfoInfo, info);
     FileMetadata* t;
-    for (int i = 0; i < fileMetas.Size(); i++) {
+    for (int i = 0; i < len(fileMetas); i++) {
         t = *fileMetas.AtData(i);
         if (t) {
             FreeStruct(&gFileMetadataInfo, t);

@@ -4,27 +4,27 @@
 #ifndef _LOCALSEND_UPLOAD_SESSION_H
 #define _LOCALSEND_UPLOAD_SESSION_H
 
-#include "utils/BaseUtil.h"
-#include "utils/net/IHttpClient.h"
-#include "utils/protocol/Models.h"
+#include "base/Base.h"
+#include "base/net/IHttpClient.h"
+#include "base/protocol/Models.h"
 
 namespace LocalSend {
 
 struct FileOutcome {
-    char* fileId = nullptr;
-    char* fileName = nullptr;
+    Str fileId = nullptr;
+    Str fileName = nullptr;
     enum class Status {
         Sent,
         Rejected,
         Error
     } status = Status::Error;
-    char* detail = nullptr;
+    Str detail = nullptr;
 };
 
 struct SendReport {
     bool prepared = false;
     int prepareStatus = 0; // codice HTTP del prepare-upload
-    char* sessionId = nullptr;
+    Str sessionId = nullptr;
     Vec<FileOutcome> files;
     bool AllSent() const;
 };
@@ -40,19 +40,17 @@ class UploadSession {
 
     // Invia i file al ricevente host:port. 'pin' opzionale (vuoto = nessuno).
     // 'progress' viene chiamato durante l'invio con i byte trasferiti.
-    SendReport Send(const char* host, int port, int workerCount, int chunkSize,
-                    const StrVecWithData<FileMetadata*>* files,
-                    // const char* pin = "",
+    SendReport Send(Str host, int port, int workerCount, int chunkSize, const StrVecWithData<FileMetadata*>* files,
+                    // Str pin = "",
                     const Func1<UploadProgress*>& cbProgress);
-    SendReport Send(const char* host, int port, int workerCount, int chunkSize,
-                    const StrVecWithData<FileMetadata*>* files,
-                    // const char* pin = "",
+    SendReport Send(Str host, int port, int workerCount, int chunkSize, const StrVecWithData<FileMetadata*>* files,
+                    // Str pin = "",
                     void*) {
         return Send(host, port, workerCount, chunkSize, files, Func1<UploadProgress*>());
     };
 
   private:
-    void Cancel(const char* host, int port, const char* sessionId);
+    void Cancel(Str host, int port, Str sessionId);
 
     IHttpClient& fHttp;
     DeviceInfo* fInfo;

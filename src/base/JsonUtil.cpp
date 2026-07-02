@@ -1,20 +1,22 @@
 // #include "common/common.h"
-#include "utils/BaseUtil.h"
-#include "utils/SettingsUtil.h"
-#include "utils/JsonParser.h"
-#include "utils/JsonUtil.h"
-// #include "utils/StrUtil.h"
+#include "Base.h"
+#include "base/Base.h"
+#include "base/Str.h"
+#include "base/SettingsUtil.h"
+#include "base/JsonParser.h"
+#include "base/JsonUtil.h"
+// #include "base/StrUtil.h"
 
 // ---- 路径解析辅助 ----
 
 // 跳过开头的 '/'，读取到下一个 '/'、'[' 或 '\0'，写入 seg
 // 返回剩余路径指针
-static const char* ParsePathSeg(const char* path, StrBuilder& seg) {
-    if (*path == '/') path++;
-    while (*path && *path != '/' && *path != '[') {
-        seg.AppendChar(*path++);
+static const char* ParsePathSeg(Str path, str::Builder& seg) {
+    if (*path.s == '/') path.s++;
+    while (*path.s && *path.s != '/' && *path.s != '[') {
+        seg.AppendChar(*path.s++);
     }
-    return path;
+    return path.s;
 }
 
 // 解析 "[N]"，返回 N，path 指向 ']' 之后
@@ -30,9 +32,9 @@ static const char* ParseArrayIdx(const char* path, int& idx) {
 }
 
 // ---- 在 StructInfo 中按名称查找字段索引 ----
-static int FindField(const StructInfo* info, const char* name) {
+static int FindField(const StructInfo* info, Str name) {
     const char* fn = info->fieldNames;
-    for (int i = 0; i < (int)info->fieldCount; i++, fn += str::Len(fn) + 1) {
+    for (int i = 0; i < (int)info->fieldCount; i++, fn += strlen(fn) + 1) {
         if (str::EqI(fn, name)) return i;
     }
     return -1;
@@ -43,23 +45,27 @@ static const StructInfo* SubInfo(const FieldInfo& f) {
 }
 
 // ---- 写入单个原始字段 ----
-static void WriteField(u8* base, const FieldInfo& f, const char* value, json::Type jtype) {
+static void WriteField(u8* base, const FieldInfo& f, Str value, json::Type jtype) {
     u8* ptr = base + f.offset;
     switch (f.type) {
         case SettingType::Bool:
-            *(bool*)ptr = str::EqI(value, "true") || str::Eq(value, "1");
+            *(bool*)ptr = str::EqI(value, StrL("true")) || str::Eq(value, StrL("1"));
             break;
         case SettingType::Int:
-            *(int*)ptr = atoi(value);
+            *(int*)ptr = ParseInt(value);
             break;
-        case SettingType::Float:
-            *(float*)ptr = (float)atof(value);
-            break;
+        case SettingType::Float: {
+            Str s = !str::IsNull(value) ? value : nullptr;
+            str::Parse(s, "%f", (float*)ptr);
+        } break;
         case SettingType::String:
-        case SettingType::Color:
+        case SettingType::Color: {
+            Str* strPtr = (Str*)ptr;
             free(*(char**)ptr);
-            *(char**)ptr = str::Dup(value);
-            break;
+            if (!str::IsNull(value)) {
+                *strPtr = str::Dup(value);
+            }
+        } break;
         default:
             break; // Struct/Array/Compact 由路径递归处理
     }
@@ -67,7 +73,7 @@ static void WriteField(u8* base, const FieldInfo& f, const char* value, json::Ty
 
 // ---- 数组状态：记录已分配的数组元素 ----
 struct ArraySlot {
-    char* prefix;    // 路径前缀，如 "/items"
+    Str prefix;      // 路径前缀，如 "/items"
     Vec<void*>* vec; // 指向结构体中的 Vec<void*>*
     const StructInfo* elemInfo;
     int lastIdx = -1; // 上次处理的索引
@@ -82,14 +88,14 @@ struct JsonStructVisitor : json::ValueVisitor {
     JsonStructVisitor(const StructInfo* info, u8* base) : rootInfo(info), rootBase(base) {}
 
     ~JsonStructVisitor() {
-        for (int i = 0; i < slots.Size(); i++) {
-            free(slots[i].prefix);
+        for (int i = 0; i < len(slots); i++) {
+            str::Free(slots[i].prefix);
         }
     }
 
     // 查找或创建数组槽
-    ArraySlot* GetOrCreateSlot(const char* prefix, Vec<void*>** vecPtr, const StructInfo* elemInfo) {
-        for (int i = 0; i < slots.Size(); i++) {
+    ArraySlot* GetOrCreateSlot(Str prefix, Vec<void*>** vecPtr, const StructInfo* elemInfo) {
+        for (int i = 0; i < len(slots); i++) {
             if (str::Eq(slots[i].prefix, prefix)) return &slots[i];
         }
         // 新建
@@ -102,31 +108,31 @@ struct JsonStructVisitor : json::ValueVisitor {
         s.elemInfo = elemInfo;
         s.lastIdx = -1;
         slots.Append(s);
-        return &slots[slots.Size() - 1];
+        return &slots[len(slots) - 1];
     }
 
     // 核心：根据路径找到 (base, StructInfo, fieldIdx)，写入值
-    bool Visit(const char* path, const char* value, json::Type jtype) override {
+    bool Visit(Str path, Str value, json::Type jtype) override {
         // 从根开始递归解析路径
         VisitPath(path, value, jtype, rootInfo, rootBase, "");
         return true;
     }
 
-    void VisitPath(const char* path, const char* value, json::Type jtype, const StructInfo* info, u8* base,
-                   const char* pathSoFar) {
-        if (!*path) return;
+    void VisitPath(Str path, Str value, json::Type jtype, const StructInfo* info, u8* base, Str pathSoFar) {
+        if (!path) return;
 
-        StrBuilder seg;
+        str::Builder seg;
         const char* rest = ParsePathSeg(path, seg);
-        if (seg.size() == 0) return;
+        if (seg.len == 0) return;
 
-        int fi = FindField(info, seg.Get());
+        int fi = FindField(info, seg.TakeStr());
         if (fi < 0) return; // 未知字段，忽略
 
         const FieldInfo& f = info->fields[fi];
 
         if (*rest == '\0') {
             // 叶子节点：直接写入
+            // WriteField(base, f, value, jtype);
             WriteField(base, f, value, jtype);
             return;
         }
@@ -139,17 +145,17 @@ struct JsonStructVisitor : json::ValueVisitor {
             rest = ParseArrayIdx(rest, idx);
 
             // 构造数组前缀路径
-            StrBuilder prefixBuf;
+            str::Builder prefixBuf;
             prefixBuf.Append(pathSoFar);
             prefixBuf.AppendChar('/');
-            prefixBuf.Append(seg.Get());
-            TempStr prefix = prefixBuf.StealData(GetTempArena());
+            prefixBuf.Append(seg.TakeStr());
+            TempStr prefix = ToStrTemp(prefixBuf);
 
             Vec<void*>** vecPtr = (Vec<void*>**)(base + f.offset);
             ArraySlot* slot = GetOrCreateSlot(prefix, vecPtr, SubInfo(f));
 
             // 确保元素已分配
-            while (slot->vec->Size() <= idx) {
+            while (len(*slot->vec) <= idx) {
                 void* elem = AllocArray<u8>(slot->elemInfo->structSize);
                 slot->vec->Append(elem);
             }
@@ -164,11 +170,11 @@ struct JsonStructVisitor : json::ValueVisitor {
             if (f.type != SettingType::Struct && f.type != SettingType::Compact && f.type != SettingType::Prerelease)
                 return;
 
-            StrBuilder prefixBuf;
+            str::Builder prefixBuf;
             prefixBuf.Append(pathSoFar);
             prefixBuf.AppendChar('/');
-            prefixBuf.Append(seg.Get());
-            TempStr prefix = prefixBuf.StealData(GetTempArena());
+            prefixBuf.Append(seg.TakeStr());
+            TempStr prefix = ToStrTemp(prefixBuf);
 
             u8* subBase = base + f.offset;
             VisitPath(rest, value, jtype, SubInfo(f), subBase, prefix);
@@ -178,7 +184,7 @@ struct JsonStructVisitor : json::ValueVisitor {
 };
 
 // ---- 公开入口 ----
-void* JsonDeserializeStruct(StructInfo* info, const char* jsonData, void* strct) {
+void* JsonDeserializeStruct(StructInfo* info, Str jsonData, void* strct) {
     u8* base = (u8*)strct;
     if (!base) {
         base = AllocArray<u8>(info->structSize);

@@ -34,9 +34,9 @@
 #include "AppSettings.h"
 #include "DarkModeSubclass.h"
 #include "SvgIcons.h"
-#include "utils/Log.h"
+#include "base/Log.h"
 #include "AppTools.h"
-#include "utils/HttpUtil.h"
+#include "base/Http.h"
 
 #ifndef ABOUT_USE_LESS_COLORS
 #define ABOUT_LINE_OUTER_SIZE 2
@@ -1165,13 +1165,13 @@ void LayoutHomePage(HomePageLayout& l) {
     EnsureTipsParsed();
 
     Vec<FileState*> allFileStates;
-    if (gGlobalPrefs->homePageListView && l.win->homePageSelectedFiles.Size() > 0) {
+    if (gGlobalPrefs->homePageListView && len(l.win->homePageSelectedFiles) > 0) {
         // 用选择的文件替代历史记录
         StrVec files;
         SliceFirst(l.win->homePageSelectedFiles, files);
         StrVec expandedFiles;
         ExpandFilesAndFolders(files, expandedFiles);
-        for (char* path : expandedFiles) {
+        for (Str path : expandedFiles) {
             // 先从历史记录中查找已有的 FileState
             // FileState* fs = gFileHistory.FindByPath(path);
             // if (!fs) {
@@ -1368,10 +1368,10 @@ void LayoutHomePage(HomePageLayout& l) {
     int uploadPanelH = 0;
     UploadProgress* up = win->uploadProgress;
     if (up) {
-        HFONT fontUpload = CreateSimpleFont(hdc, "MS Shell Dlg", 13);
+        // HFONT fontUpload = CreateSimpleFont(hdc, "MS Shell Dlg", 13);
         int rowH = DpiScale(hdc, 20);
         int padding = DpiScale(hdc, 8);
-        int nFiles = up->fileStates.Size();
+        int nFiles = len(up->fileStates);
         // 标题行 + 总进度条 + 每个文件一行
         uploadPanelH = padding + rowH + DpiScale(hdc, 6) + rowH + (nFiles * (rowH + DpiScale(hdc, 2))) + padding;
         l.rcUploadPanel = {rc.x + kThumbsMarginLeft, headerBottomY + DpiScale(hdc, 8),
@@ -1976,9 +1976,8 @@ static void DrawHomePageLayout(HomePageLayout& l) {
         i64 uploadedBytes = up->uploadedBytes.Load();
         int globalPct = (totalBytes > 0) ? (int)(uploadedBytes * 100 / totalBytes) : 0;
 
-        TempStr titleStr =
-            str::FormatTemp("Uploading: %d / %d files  (%d%%, %s / %s)", nCompleted, nTotal, globalPct,
-                            FormatSizeShortTransTemp(uploadedBytes), FormatSizeShortTransTemp(totalBytes));
+        TempStr titleStr = fmt("Uploading: %d / %d files  (%d%%, %s / %s)", nCompleted, nTotal, globalPct,
+                               FormatSizeShortTransTemp(uploadedBytes), FormatSizeShortTransTemp(totalBytes));
         Rect rcTitle = {x, y, panelW - DpiScale(hdc, 60), rowH};
         HdcDrawText(hdc, titleStr, rcTitle, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX, fontUp);
         // 关闭按钮 ×
@@ -2009,7 +2008,7 @@ static void DrawHomePageLayout(HomePageLayout& l) {
         int col3X = col2X + prgW + colGap;
         int col4X = col3X + pctW + colGap;
 
-        for (int i = 0; i < up->fileStates.Size(); i++) {
+        for (int i = 0; i < len(up->fileStates); i++) {
             const FileUploadState* fs = up->fileStates[i];
             if (!fs->isActive && !fs->isDone) continue;
 
@@ -2032,13 +2031,13 @@ static void DrawHomePageLayout(HomePageLayout& l) {
             // 百分比
             int filePct = (fs->totalBytes > 0) ? (int)(fs->uploadedBytes.Load() * 100 / fs->totalBytes) : 0;
             TempStr pctStr = fs->isDone ? (fs->isFailed ? str::DupTemp("❌FAIL") : str::DupTemp("✅ 完成"))
-                                        : str::FormatTemp("⏳(%d%%)", filePct);
+                                        : fmt("⏳(%d%%)", filePct);
             Rect rcPct = {col3X, y, pctW, rowH};
             HdcDrawText(hdc, pctStr, rcPct, DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX, fontUp);
 
             // 已上传 / 总大小
-            TempStr sizeStr = str::FormatTemp("%s / %s", FormatSizeShortTransTemp(fs->uploadedBytes.Load()),
-                                              FormatSizeShortTransTemp(fs->totalBytes));
+            TempStr sizeStr = fmt("%s / %s", FormatSizeShortTransTemp(fs->uploadedBytes.Load()),
+                                  FormatSizeShortTransTemp(fs->totalBytes));
             Rect rcSize = {col4X, y, sizeW, rowH};
             HdcDrawText(hdc, sizeStr, rcSize, DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX, fontUp);
 
@@ -2086,8 +2085,8 @@ static void DrawHomePageLayout(HomePageLayout& l) {
             SelectObject(hdc, fontText);
             {
                 RECT rcText = {rect.x, rect.y, rect.x + rect.dx, rect.y + rect.dy};
-                DrawMaybeHighlightedText(hdc, rcText, fileName, l.filterWords, l.highlighted, backgroundColor, isRtl, false,
-                                         fmt);
+                DrawMaybeHighlightedText(hdc, rcText, fileName, l.filterWords, l.highlighted, backgroundColor, isRtl,
+                                         false, fmt);
             }
 
             GetFileStateIcon(fs);
@@ -2095,7 +2094,7 @@ static void DrawHomePageLayout(HomePageLayout& l) {
             ImageList_Draw(fs->himl, fs->iconIdx, hdc, x, rect.y, ILD_TRANSPARENT);
         }
     } else {
-        // #if 0
+#if 0
         //         if (win->homePageSelectedFiles.Size() > 0) {
         //             UINT rfmt = DT_SINGLELINE | DT_END_ELLIPSIS | DT_VCENTER | DT_NOPREFIX;
         //             for (const FileListRow& row : l.rows) {
@@ -2125,16 +2124,16 @@ static void DrawHomePageLayout(HomePageLayout& l) {
         //                 TempStr finishStr = (fs->pageNo == sz) ? str::DupTemp("✅ 完成") : str::DupTemp("⏳
         //                 传输中"); HdcDrawText(hdc, finishStr, row.rcFileSize, rfmt | DT_RIGHT, fontText);
         //             }
-        //         } else {
-        // #endif
+    //         } else {
+#endif
         UINT rfmt = DT_SINGLELINE | DT_END_ELLIPSIS | DT_VCENTER | DT_NOPREFIX;
         for (const FileListRow& row : l.rows) {
             FileState* fs = row.fs;
             // 第一列：完整文件路径（带省略号）
-            TempStr fpath = str::FormatTemp("%s", fs->filePath);
+            TempStr fpath = fmt("%s", fs->filePath);
             HdcDrawText(hdc, fpath, row.rcPath, rfmt | DT_LEFT, fontText);
             // 第二列：当前页 / 总页数
-            TempStr pageStr = str::FormatTemp("%d / %d", fs->pageNo, fs->totalPages);
+            TempStr pageStr = fmt("%d / %d", fs->pageNo, fs->totalPages);
             HdcDrawText(hdc, pageStr, row.rcPage, rfmt | DT_RIGHT, fontText);
             // 第三列：阅读百分比
             // i64 sz = file::GetSize(fs->filePath);
@@ -2144,7 +2143,7 @@ static void DrawHomePageLayout(HomePageLayout& l) {
 
             int pct = (fs->totalPages > 0) ? (fs->pageNo * 100 / fs->totalPages) : 0;
             // int pct = (sz > 0) ? (fs->pageNo * 100 / sz) : 0;
-            TempStr pctStr = str::FormatTemp("%d%%", pct);
+            TempStr pctStr = fmt("%d%%", pct);
             HdcDrawText(hdc, pctStr, row.rcPercent, rfmt | DT_RIGHT, fontText);
             // 第四列：文件大小
             i64 sz = file::GetSize(fs->filePath);

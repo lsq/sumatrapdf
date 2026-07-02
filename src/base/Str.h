@@ -2,6 +2,8 @@
    License: Simplified BSD (see COPYING.BSD) */
 
 // note: include Base.h instead of including directly
+#ifndef _STR_H
+#define _STR_H
 
 #define UTF8_BOM "\xEF\xBB\xBF"
 #define UTF16_BOM "\xFF\xFE"
@@ -340,3 +342,4 @@ Str FormatFileSize(Arena* arena, u64 size);
 void FormatFileSizeToWstrBuf(u64 size, WStr buf);
 int FormatSizeHumanIntoBuf(u64 size, Str buf);
 void FormatSizeHumanIntoWBuf(u64 size, WStr wbuf);
+#endif // _STR_H

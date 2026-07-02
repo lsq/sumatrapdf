@@ -1,9 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include "utils/BaseUtil.h"
-#include "utils/FileUtil.h"
-#include "utils/protocol/Fingerprint.h"
+#include "base/Base.h"
+#include "base/File.h"
+#include "base/Str.h"
+#include "base/protocol/Fingerprint.h"
 
 namespace LocalSend {
 
@@ -65,7 +66,7 @@ static void bytes_to_hex(const uint8_t* bytes, size_t len, char* hex_out) {
 }
 
 // 主函数：生成 64 字符十六进制指纹（对应 32 字节随机数据）
-char* GenerateFingerprint(void) {
+char* GenerateFingerprint() {
     const size_t raw_len = 32; // 32 bytes → 64 hex chars
     const size_t hex_len = raw_len * 2;
 
@@ -93,17 +94,17 @@ char* GenerateFingerprint(void) {
 // extern char* GenerateFingerprint(void);
 
 // 辅助：从 ByteSlice 提取第一行（不含换行符），返回 malloc 分配的 null-terminated 字符串
-static char* extract_first_line(const ByteSlice* bs) {
-    if (!bs || !bs->data() || bs->size() == 0) {
+static Str extract_first_line(Str bs) {
+    if (!bs || !bs.s || len(bs) == 0) {
         return nullptr;
     }
 
-    const char* data = (const char*)bs->data();
-    size_t len = bs->size();
+    const char* data = (const char*)bs.s;
+    int ln = len(bs);
 
     // 查找第一个换行符
-    size_t line_len = 0;
-    while (line_len < len && data[line_len] != '\n' && data[line_len] != '\r') {
+    int line_len = 0;
+    while (line_len < ln && data[line_len] != '\n' && data[line_len] != '\r') {
         line_len++;
     }
 
@@ -123,22 +124,22 @@ static char* extract_first_line(const ByteSlice* bs) {
     // if (line_len > 0 && line[line_len - 1] == '\r') {
     //     line[line_len - 1] = '\0';
     // }
-    char* line = str::Dup(data, line_len);
 
-    return line;
+    str::TrimWSInPlace(data, str::TrimOpt::Right);
+    return data;
 }
 
 // 主函数：加载或创建指纹（Windows + file:: API）
-char* LoadOrCreateFingerprint(const char* path) {
+Str LoadOrCreateFingerprint(Str path) {
     if (!path) {
         return nullptr;
     }
 
     // Step 1: 尝试读取文件
-    ByteSlice bs = file::ReadFile(path);
-    if (bs.data() != nullptr) {
-        char* first_line = extract_first_line(&bs);
-        if (first_line && str::Len(first_line) > 0) {
+    Str bs = file::ReadFile(path);
+    if (bs.s != nullptr) {
+        Str first_line = extract_first_line(bs);
+        if (first_line && len(first_line) > 0) {
             // 成功加载非空指纹
             return first_line;
         }
@@ -161,19 +162,20 @@ char* LoadOrCreateFingerprint(const char* path) {
     // }
     // memcpy(buf, fp, fp_len);
     // buf[fp_len] = '\n';
-    TempStr buf = str::FormatTemp("%s\n", fp);
+    TempStr buf = fmt("%s\n", Str(fp));
 
     // Step 4: 写入文件
-    ByteSlice to_write = {(u8*)buf, total_len};
-    bool ok = file::WriteFile(path, to_write);
+    bool ok = file::WriteFile(path, buf);
     if (!ok) {
         // printf("Writing fingerprint: %s", buf);
-        printf("Failed writing fingerprint: %s", buf);
+        printf("Failed writing fingerprint: %s", buf.s);
     }
     // free(buf); // WriteFile 应已拷贝数据（根据其实现）
 
     // 即使写入失败，仍返回生成的指纹（与原逻辑一致）
-    return fp;
+    Str rst = str::Dup(fp);
+    free(fp);
+    return rst;
 }
 
 // char*

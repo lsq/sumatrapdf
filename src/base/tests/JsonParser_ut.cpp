@@ -143,7 +143,7 @@ void JsonTest() {
 void TestJsonDeserializer() {
     printf("测试给出结构体信息，把json反序列化为结构体\n-------------------------\n");
     struct ServerConfig {
-        char* host;
+        Str host;
         int port;
         bool useTls;
     };
@@ -161,9 +161,11 @@ void TestJsonDeserializer() {
 
     // 3. 反序列化
     const char* json = R"({"host":"192.168.1.1","port":443,"useTls":true})";
+    // TempStr hostInfo = fmt("%s", json);
+    // auto* cfg = (ServerConfig*)JsonDeserializeStruct(&gServerConfigInfo, hostInfo);
     auto* cfg = (ServerConfig*)JsonDeserializeStruct(&gServerConfigInfo, json);
     // cfg->host == "192.168.1.1", cfg->port == 443, cfg->useTls == true
-    printf("cfg->host == \"%s\", cfg->port == %d, cfg->useTls == %d\n", cfg->host, cfg->port, cfg->useTls);
+    printf("cfg->host == \"%s\", cfg->port == %d, cfg->useTls == %d\n", cfg->host.s, cfg->port, cfg->useTls);
 
     // struct IpInfo {
     //     char* info;
@@ -174,20 +176,20 @@ void TestJsonDeserializer() {
     FreeStruct(&gServerConfigInfo, cfg);
 
     // 下面是错误用法，FreeStruct只是用free标记内存为可重用状态，在生效后，cfg原来指向的内存可能没有清零，另外cfg也仍然指向原来的内存地址，
-    if (!cfg) {
-        printf("cfg free successful!");
-    } else if (cfg->host) {
-        printf("cfg after free: %s\n", cfg->host);
-    }
+    // if (!cfg) {
+    //     printf("cfg free successful!");
+    // } else if (cfg->host.s) { //错误用法
+    //     printf("cfg after free: %s\n", cfg->host.s);
+    // }
 }
 
 struct FileInfo {
-    char* id; // str::Dup 分配，需手动 str::Free
-    char* fileName;
+    Str id; // str::Dup 分配，需手动 str::Free
+    Str fileName;
     i64 size;
-    char* fileType;
-    char* sha256;  // 可为 nullptr（JSON null）
-    char* preview; // 可为 nullptr
+    Str fileType;
+    Str sha256;  // 可为 nullptr（ 	test_util.exe!Str::operator bool() 行 242	C++ JSON null）
+    Str preview; // 可为 nullptr
 };
 
 using FilesMap = StrVecWithData<FileInfo>;
@@ -197,20 +199,20 @@ struct FilesVisitor : json::ValueVisitor {
 
     explicit FilesVisitor(FilesMap& f) : files(f) {}
 
-    bool Visit(const char* path, const char* value, json::Type type) override {
+    bool Visit(Str path, Str value, json::Type type) override {
         // 路径格式：/files/f1/id, /files/f1/fileName, ...
         const char* prefix = "/files/";
         if (!str::StartsWith(path, prefix)) {
             return true;
         }
-        const char* afterPrefix = path + str::Len(prefix);
-        const char* slash = str::FindChar(afterPrefix, '/');
+        const char* afterPrefix = path.s + len(prefix);
+        const char* slash = str::SliceFromChar(afterPrefix, '/').s;
         if (!slash) {
             return true; // 没有字段名，跳过
         }
 
         // 提取动态键（文件ID）
-        TempStr fileId = str::DupTemp(afterPrefix, slash - afterPrefix);
+        TempStr fileId(afterPrefix, (int)(slash - afterPrefix));
         const char* fieldName = slash + 1;
 
         // 查找或创建 FileInfo 条目
@@ -222,13 +224,13 @@ struct FilesVisitor : json::ValueVisitor {
         FileInfo* fi = files.AtData(idx);
 
         // 填充字段（null 值时 value 为 "null"，需判断 type）
-        const char* v = (type == json::Type::Null) ? nullptr : value;
+        Str v = (type == json::Type::Null) ? nullptr : value;
         if (str::Eq(fieldName, "id")) {
             str::ReplaceWithCopy(&fi->id, v);
         } else if (str::Eq(fieldName, "fileName")) {
             str::ReplaceWithCopy(&fi->fileName, v);
         } else if (str::Eq(fieldName, "size")) {
-            fi->size = v ? _atoi64(v) : 0;
+            fi->size = v ? ParseInt(v) : 0;
         } else if (str::Eq(fieldName, "fileType")) {
             str::ReplaceWithCopy(&fi->fileType, v);
         } else if (str::Eq(fieldName, "sha256")) {
@@ -241,7 +243,7 @@ struct FilesVisitor : json::ValueVisitor {
 };
 
 void FreeFilesMap(FilesMap& files) {
-    for (int i = 0; i < files.Size(); i++) {
+    for (int i = 0; i < len(files); i++) {
         FileInfo* fi = files.AtData(i);
         str::Free(fi->id);
         str::Free(fi->fileName);
@@ -283,11 +285,11 @@ void TestJsonMap() {
     // gLogToDebugger = true;
     // gLogToConsole = true;
     // 遍历结果
-    for (int i = 0; i < files.Size(); i++) {
-        const char* fileId = files.At(i); // 键：动态文件ID
-        FileInfo* fi = files.AtData(i);   // 值：FileInfo 结构体
+    for (int i = 0; i < len(files); i++) {
+        Str fileId = files.At(i);       // 键：动态文件ID
+        FileInfo* fi = files.AtData(i); // 值：FileInfo 结构体
         // logf("upload info %s: id=%s, fileName=%s, size=%lld\n", fileId, fi->id, fi->fileName, fi->size);
-        printf("upload info %s: id=%s, fileName=%s, size=%lld\n", fileId, fi->id, fi->fileName, fi->size);
+        printf("upload info %s: id=%s, fileName=%s, size=%lld\n", fileId.s, fi->id.s, fi->fileName.s, fi->size);
     }
     // gLogToConsole = false;
 
@@ -295,7 +297,7 @@ void TestJsonMap() {
 }
 
 struct Info {
-    char* name = nullptr;
+    Str name = nullptr;
     int version = 0;
 };
 
@@ -324,30 +326,32 @@ static const FieldInfo gServerConfigFields[] = {
 static const StructInfo gServerConfigInfo = {sizeof(ServerConfig), 2, gServerConfigFields, "port\0useTls\0"};
 
 // 根据 StructInfo 中的字段名找到 FieldInfo，写入值
-static void WriteFieldByName(const StructInfo* si, u8* base, const char* fieldName, const char* value,
-                             json::Type type) {
+static void WriteFieldByName(const StructInfo* si, u8* base, const char* fieldName, Str value, json::Type type) {
     if (type == json::Type::Null) {
         return; // null 值跳过，保留默认值
     }
     const char* names = si->fieldNames;
-    for (int i = 0; i < si->fieldCount; i++, names += str::Len(names) + 1) {
+    for (int i = 0; i < si->fieldCount; i++, names += len(names) + 1) {
         if (str::Eq(names, fieldName)) {
             // 复用 deserializeField 的逻辑（或内联实现）
             const FieldInfo& f = si->fields[i];
             u8* ptr = base + f.offset;
             switch (f.type) {
-                case SettingType::String:
-                    str::ReplaceWithCopy((char**)ptr, value);
-                    break;
-                case SettingType::Int:
-                    *(int*)ptr = atoi(value);
-                    break;
-                case SettingType::Bool:
+                case SettingType::String: {
+                    Str* strPtr = (Str*)ptr;
+                    free(*(char**)ptr);
+                    if (!str::IsNull(value)) *strPtr = str::Dup(value);
+                } break;
+                case SettingType::Int: {
+                    *(int*)ptr = ParseInt(value);
+                } break;
+                case SettingType::Bool: {
                     *(bool*)ptr = str::EqI(value, "true") || str::Eq(value, "1");
-                    break;
-                case SettingType::Float:
-                    *(float*)ptr = (float)atof(value);
-                    break;
+                } break;
+                case SettingType::Float: {
+                    Str s = !str::IsNull(value) ? value : nullptr;
+                    str::Parse(s, "%f", (float*)ptr);
+                } break;
                 default:
                     break;
             }
@@ -361,14 +365,14 @@ struct IpInfoDeserializer : json::ValueVisitor {
 
     explicit IpInfoDeserializer(IpInfo* o) : out(o) {}
 
-    bool Visit(const char* path, const char* value, json::Type type) override {
+    bool Visit(Str path, Str value, json::Type type) override {
         // --- /info/<fieldName> ---
         const char* kInfoPrefix = "/info/";
         if (str::StartsWith(path, kInfoPrefix)) {
             if (!out->info) {
-                out->info = new struct Info {};
+                out->info = new struct Info;
             }
-            const char* fieldName = path + str::Len(kInfoPrefix);
+            const char* fieldName = path.s + strlen(kInfoPrefix);
             WriteFieldByName(&gInfoInfo, (u8*)out->info, fieldName, value, type);
             return true;
         }
@@ -376,14 +380,14 @@ struct IpInfoDeserializer : json::ValueVisitor {
         // --- /ipPool/<ip>/<fieldName> ---
         const char* kPoolPrefix = "/ipPool/";
         if (str::StartsWith(path, kPoolPrefix)) {
-            const char* afterPrefix = path + str::Len(kPoolPrefix);
+            const char* afterPrefix = path.s + strlen(kPoolPrefix);
             // 找到 IP 键结束位置（第一个 '/'）
-            const char* slash = str::FindChar(afterPrefix, '/');
+            const char* slash = str::SliceFromChar(afterPrefix, '/').s;
             if (!slash) {
                 return true; // 路径格式不对，跳过
             }
             // 提取 IP 键（临时字符串）
-            TempStr ipKey = str::DupTemp(afterPrefix, slash - afterPrefix);
+            TempStr ipKey(afterPrefix, (int)(slash - afterPrefix));
             const char* fieldName = slash + 1;
 
             // 查找或创建 ServerConfig 条目
@@ -391,7 +395,7 @@ struct IpInfoDeserializer : json::ValueVisitor {
             if (idx < 0) {
                 ServerConfig sc{};
                 out->ipPool.Append(ipKey, sc);
-                idx = out->ipPool.Size() - 1;
+                idx = len(out->ipPool) - 1;
             }
             ServerConfig* sc = out->ipPool.AtData(idx);
             WriteFieldByName(&gServerConfigInfo, (u8*)sc, fieldName, value, type);
@@ -436,25 +440,26 @@ void TestIpInfo() {
     bool ok = DeserializeIpInfo(ipinfo, &out);
     utassert(ok);
 
-    printf("ip info: name=%s, useTls=%d\n", out.info->name, out.info->version);
-    for (int i = 0; i < out.ipPool.Size(); i++) {
-        char* ip = out.ipPool.At(i);
+    printf("ip info: name=%s, useTls=%d\n", out.info->name.s, out.info->version);
+    for (int i = 0; i < len(out.ipPool); i++) {
+        Str ip = out.ipPool.At(i);
         ServerConfig* serverInfo = out.ipPool.AtData(i);
-        printf("server Info: ip=%s, port=%d, useTls=%s\n", ip, serverInfo->port, serverInfo->useTls ? "true" : "false");
+        printf("server Info: ip=%s, port=%d, useTls=%s\n", ip.s, serverInfo->port,
+               serverInfo->useTls ? "true" : "false");
     }
 
     FreeIpInfo(&out);
 }
 
-// 将 char* 以 JSON 字符串形式写入 StrBuilder（含两端引号）
+// 将 char* 以 JSON 字符串形式写入 str::Builder（含两端引号）
 // null 值写为 JSON null（不加引号）
-static void JsonAppendStr(StrBuilder& out, const char* s) {
+static void JsonAppendStr(str::Builder& out, Str s) {
     if (!s) {
         out.Append("null");
         return;
     }
     out.AppendChar('"');
-    for (const char* c = s; *c; c++) {
+    for (const char* c = s.s; *c; c++) {
         switch (*c) {
             case '"':
                 out.Append("\\\"");
@@ -474,7 +479,7 @@ static void JsonAppendStr(StrBuilder& out, const char* s) {
             default:
                 // 控制字符用 \uXXXX 转义
                 if ((unsigned char)*c < 0x20) {
-                    out.AppendFmt("\\u%04x", (unsigned char)*c);
+                    out.Append(fmt("\\u%04x", (unsigned char)*c));
                 } else {
                     out.AppendChar(*c);
                 }
@@ -485,25 +490,25 @@ static void JsonAppendStr(StrBuilder& out, const char* s) {
 }
 
 // 序列化 struct info* 为 JSON 对象片段（不含外层花括号）
-static void JsonAppendInfoFields(StrBuilder& out, const struct Info* inf) {
+static void JsonAppendInfoFields(str::Builder& out, const struct Info* inf) {
     out.Append("\"name\":");
     JsonAppendStr(out, inf ? inf->name : nullptr);
     // 若有更多字段，继续追加：
     // out.Append(",\"otherField\":");
     // JsonAppendStr(out, inf ? inf->otherField : nullptr);
-    out.AppendFmt(", \"version\":%d", inf->version);
+    out.Append(fmt(", \"version\":%d", inf->version));
 }
 
 // 序列化 ServerConfig 为 JSON 对象片段（不含外层花括号）
-static void JsonAppendServerConfigFields(StrBuilder& out, const ServerConfig* cfg) {
-    out.AppendFmt("\"port\":%d,", cfg->port);
-    out.AppendFmt("\"useTls\":%s", cfg->useTls ? "true" : "false");
+static void JsonAppendServerConfigFields(str::Builder& out, const ServerConfig* cfg) {
+    out.Append(fmt("\"port\":%d,", cfg->port));
+    out.Append(fmt("\"useTls\":%s", TempStr(cfg->useTls ? "true" : "false")));
 }
 
 // 序列化整个 IpInfo 为 JSON 字符串
 // 返回堆分配的 char*，调用方负责 free
-char* IpInfoToJson(const IpInfo* ip) {
-    StrBuilder out;
+TempStr IpInfoToJson(const IpInfo* ip) {
+    str::Builder out;
 
     out.Append("{\n");
 
@@ -521,9 +526,9 @@ char* IpInfoToJson(const IpInfo* ip) {
 
     // --- "ipPool" 字段（动态键对象）---
     out.Append("  \"ipPool\":{\n");
-    int n = ip->ipPool.Size();
+    int n = len(ip->ipPool);
     for (int i = 0; i < n; i++) {
-        const char* key = ip->ipPool.At(i);
+        Str key = ip->ipPool.At(i);
         const ServerConfig* cfg = ip->ipPool.AtData(i);
 
         out.Append("    ");
@@ -541,7 +546,7 @@ char* IpInfoToJson(const IpInfo* ip) {
 
     out.Append("}");
 
-    return out.StealData(); // 调用方负责 free
+    return ToStrTemp(out); // 调用方负责 free
 }
 
 void TestJsonSerializer() {
@@ -558,8 +563,8 @@ void TestJsonSerializer() {
     ipinfo.info = &inf;
     ipinfo.ipPool.Append("192.168.124.1", sc);
 
-    char* json = IpInfoToJson(&ipinfo);
-    printf("ipinfo: \n%s\n", json);
-    free(inf.name);
-    free(json);
+    TempStr json = IpInfoToJson(&ipinfo);
+    printf("ipinfo: \n%s\n", json.s);
+    str::Free(inf.name);
+    // str::Free(json);
 }

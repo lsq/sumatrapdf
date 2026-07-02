@@ -1,6 +1,6 @@
 /* Copyright 2022 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
-#include "utils/WinUtil.h"
+#include "base/Win.h"
 
 struct StrQueue;
 struct HttpRsp {
@@ -130,7 +130,7 @@ struct BoundedByteQueue {
         DeleteCriticalSection(&cs);
         SafeCloseHandle(&hNotEmpty);
         SafeCloseHandle(&hNotFull);
-        for (int i = 0; i < chunks.Size(); i++) {
+        for (int i = 0; i < len(chunks); i++) {
             free(chunks[i].data);
         }
     }
@@ -177,7 +177,7 @@ struct BoundedByteQueue {
             //     // goto again;
             // }
 
-            if (chunks.Size() > 0) {
+            if (len(chunks) > 0) {
                 out = chunks.PopAt(0);
                 // bool needRelease = (chunks.Size() < maxChunks);
                 LeaveCriticalSection(&cs);
@@ -236,7 +236,7 @@ struct UploadProgress {
 
     UploadProgress() = default;
     ~UploadProgress() {
-        for (int i = 0; i < fileStates.Size(); i++) {
+        for (int i = 0; i < len(fileStates); i++) {
             delete fileStates[i];
         }
     }

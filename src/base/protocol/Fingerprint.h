@@ -10,7 +10,7 @@ char* GenerateFingerprint();
 
 // Carica il fingerprint dal file indicato; se assente o vuoto, ne genera uno
 // nuovo e lo salva. Ritorna la stringa usata.
-char* LoadOrCreateFingerprint(const char* path);
+Str LoadOrCreateFingerprint(Str path);
 
 } // namespace LocalSend
 

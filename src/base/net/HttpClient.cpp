@@ -1,16 +1,15 @@
 #include "IHttpClient.h"
-#include "utils/BaseUtil.h"
-#include "utils/FileUtil.h"
-// #include "utils/ScopedWin.h"
-// #include "utils/WinDynCalls.h"
-#include "utils/WinUtil.h"
-#include "utils/ThreadUtil.h"
-#include "utils/StrQueue.h"
-// #include "utils/HttpUtil.h"
-#include "utils/net/HttpClient.h"
-#include <cstdio>
+#include "base/Base.h"
+#include "base/File.h"
+// #include "base/ScopedWin.h"
+// #include "base/WinDynCalls.h"
+#include "base/Win.h"
+#include "base/Thread.h"
+#include "base/StrQueue.h"
+// #include "base/HttpUtil.h"
+#include "base/net/HttpClient.h"
 
-// #include "utils/Log.h"
+// #include "base/Log.h"
 
 namespace LocalSend {
 
@@ -26,7 +25,7 @@ int is_url_safe(unsigned char c) {
 }
 
 char*
-UrlEncode(const char* s)
+UrlEncode(Str s)
 {
     if (!s) return NULL;
 
@@ -57,7 +56,7 @@ UrlEncode(const char* s)
 #if 0
 // Funzioni di I/O astratte: socket nudo o SSL.
 typedef std::function<ssize_t(char*, size_t)> ReadFn;
-typedef std::function<bool(const char*, size_t)> WriteFn;
+typedef std::function<bool(Str, size_t)> WriteFn;
 
 namespace {
 
@@ -232,10 +231,10 @@ BuildHead(const std::string& host, int port, const std::string& path,
 HttpClient::HttpClient() {}
 
 HttpClient::~HttpClient() {}
-HttpResponse HttpClient::Post(const char* host, int port, const char* path, StrBuilder* contentType, StrBuilder* body) {
+HttpResponse HttpClient::Post(Str host, int port, Str path, str::Builder* contentType, str::Builder* body) {
     HttpResponse resp;
 
-    // StrBuilder resp(2048);
+    // str::Builder resp(2048);
     bool ok = false;
     char* hdr = nullptr;
     DWORD hdrLen = 0;
@@ -249,8 +248,8 @@ HttpResponse HttpClient::Post(const char* host, int port, const char* path, StrB
     DWORD dwRead = 0;
     DWORD flags;
     DWORD dwService;
-    WCHAR* server = ToWStrTemp(host);
-    WCHAR* url = ToWStrTemp(path);
+    WCHAR* server = CWStrTemp(host);
+    WCHAR* url = CWStrTemp(path);
     DWORD infoLevel;
     // DWORD dwFlags = SECURITY_FLAG_IGNORE_ALL_CERT_ERRORS;
 
@@ -283,13 +282,15 @@ HttpResponse HttpClient::Post(const char* host, int port, const char* path, StrB
         goto Error;
     }
 
-    if (contentType && contentType->size() > 0) {
-        hdr = contentType->Get();
-        hdrLen = (DWORD)contentType->size();
+    if (contentType && len(*contentType) > 0) {
+        hdr = ToCStr(*contentType);
+        printf("hdr: %s\n", hdr);
+        hdrLen = (DWORD)len(*contentType);
     }
-    if (body && body->size() > 0) {
-        d = body->Get();
-        dLen = (DWORD)body->size();
+    if (body && len(*body) > 0) {
+        d = ToCStr(*body);
+        printf("body: %s\n", (char*)d);
+        dLen = (DWORD)len(*body);
     }
 
     InternetSetOptionW(hReq, INTERNET_OPTION_SEND_TIMEOUT, &timeoutMs, sizeof(timeoutMs));
@@ -345,7 +346,7 @@ HttpResponse HttpClient::Post(const char* host, int port, const char* path, StrB
         if (!InternetReadFile(hReq, buf, sizeof(buf), &dwRead)) {
             goto Error;
         }
-        ok = resp.data.Append(buf, dwRead);
+        ok = resp.data.Append(Str(buf, (int)dwRead));
         if (!ok) {
             goto Error;
         }
@@ -383,9 +384,8 @@ Error:
 }
 
 #if 1
-HttpResponse HttpClient::PostFile(const char* host, int port, const char* path, StrBuilder* contentType,
-                                  const char* filePath, int maxQueueChunks, int chunkSize,
-                                  const Func1<HttpUploadProgress*>& cbProgress) {
+HttpResponse HttpClient::PostFile(Str host, int port, Str path, str::Builder* contentType, Str filePath,
+                                  int maxQueueChunks, int chunkSize, const Func1<HttpUploadProgress*>& cbProgress) {
     HttpResponse resp;
     // printf("PostFile: server='%s' port=%d path='%s' file='%s'\n",
     // host, port, path, filePath);
@@ -395,8 +395,8 @@ HttpResponse HttpClient::PostFile(const char* host, int port, const char* path, 
     DWORD respCode = 0, respCodeSize = sizeof(respCode);
     DWORD timeoutMs = 60 * 1000;
     // 建立 HTTP 连接
-    WCHAR* server = ToWStrTemp(host);
-    WCHAR* urlPath = ToWStrTemp(path);
+    WCHAR* server = ToWStrTemp(host).s;
+    WCHAR* urlPath = ToWStrTemp(path).s;
 
     resp.error = ERROR_SUCCESS;
     // 获取文件大小（用于 Content-Length 和进度计算）
@@ -407,7 +407,7 @@ HttpResponse HttpClient::PostFile(const char* host, int port, const char* path, 
     BoundedByteQueue queue(maxQueueChunks);
     bool readerError = false;
 
-    auto td = new FileReaderData{&queue, str::Dup(filePath), chunkSize, &readerError};
+    auto td = new FileReaderData{&queue, str::Dup(filePath).s, chunkSize, &readerError};
     auto fn = MkFunc0(FileReaderThread, td);
 
     if (fileSize < 0) {
@@ -447,9 +447,8 @@ HttpResponse HttpClient::PostFile(const char* host, int port, const char* path, 
     // 添加 Content-Length 头
     {
         // TempStr hdr = str::FormatTemp("Content-Length: %lld\r\nContent-Type: application/octet-stream\r\n\r\n",
-        TempStr hdr = str::FormatTemp("Content-Length: %lld\r\nContent-Type: %s\r\n\r\n", (long long)fileSize,
-                                      contentType->Get());
-        WCHAR* hdrW = ToWStrTemp(hdr);
+        TempStr hdr = fmt("Content-Length: %lld\r\nContent-Type: %s\r\n\r\n", (long long)fileSize, ToStr(*contentType));
+        WCHAR* hdrW = ToWStrTemp(hdr).s;
         HttpAddRequestHeadersW(hReq, hdrW, (DWORD)-1, HTTP_ADDREQ_FLAG_ADD);
     }
 

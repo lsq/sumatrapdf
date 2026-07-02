@@ -677,11 +677,11 @@ bool operator!=(const StrVec::iterator& a, const StrVec::iterator& b) {
 };
 
 void SliceFirst(const StrVec& str, StrVec& result) {
-    if (result.Size() != 0) {
+    if (len(result) != 0) {
         return;
     }
 
-    int n = str.Size();
+    int n = len(str);
     for (int i = 1; i < n; i++) {
         result.Append(str.At(i));
     }

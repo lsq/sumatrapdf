@@ -4,19 +4,19 @@
 #ifndef _LOCALSEND_MODELS_H
 #define _LOCALSEND_MODELS_H
 
-#include "utils/BaseUtil.h"
-#include "utils/SettingsUtil.h"
+#include "base/Base.h"
+#include "base/SettingsUtil.h"
 namespace LocalSend {
 
 // L'oggetto "info" del prepare-upload (identita' del device).
 struct DeviceInfo {
-    char* alias = nullptr;
-    char* version = nullptr;
-    char* deviceModel = nullptr;
-    char* deviceType = nullptr;  // fallback per valori sconosciuti
-    char* fingerprint = nullptr; // in HTTP: stringa casuale persistente
+    Str alias = nullptr;
+    Str version = nullptr;
+    Str deviceModel = nullptr;
+    Str deviceType = nullptr;  // fallback per valori sconosciuti
+    Str fingerprint = nullptr; // in HTTP: stringa casuale persistente
     int port = 53317;
-    char* protocol = nullptr; // "https" da L3
+    Str protocol = nullptr; // "https" da L3
     bool download = false;
 
     // JsonValue ToJson() const;
@@ -40,16 +40,16 @@ inline const StructInfo gDeviceInfoInfo = {
 
 // Metadati di un file nel prepare-upload.
 struct FileMetadata {
-    char* id;
-    char* fileName;
+    Str id;
+    Str fileName;
     long long size = 0;
-    char* fileType = nullptr;
-    char* sha256;   // vuoto -> null
-    char* preview;  // vuoto -> null
-    char* modified; // ISO 8601 UTC, vuoto -> omesso
-    char* accessed; // ISO 8601 UTC, vuoto -> omesso
+    Str fileType = nullptr;
+    Str sha256;   // vuoto -> null
+    Str preview;  // vuoto -> null
+    Str modified; // ISO 8601 UTC, vuoto -> omesso
+    Str accessed; // ISO 8601 UTC, vuoto -> omesso
 
-    char* localPath; // non serializzato: sorgente dei byte (mittente)
+    Str localPath; // non serializzato: sorgente dei byte (mittente)
 
     // JsonValue ToJson() const;
     // Lato ricevente (L1): legge i metadati di un file dalla richiesta.
@@ -89,8 +89,8 @@ TempStr BuildPrepareUpload(const DeviceInfo* info, const StrVecWithData<FileMeta
 // Struttura SIMMETRICA: il mittente la OTTIENE dalla risposta, il ricevente la
 // GENERA prima di rispondere. Stessa forma, lati opposti.
 struct PrepareUploadResult {
-    char* sessionId = nullptr;
-    StrVecWithData<char*> fileTokens; // fileId -> token
+    Str sessionId = nullptr;
+    StrVecWithData<Str> fileTokens; // fileId -> token
 
     // 说明
     // char* token1 = strdup("abc"); // 分配内存，token1 = 0x1000
@@ -106,9 +106,9 @@ struct PrepareUploadResult {
 
     ~PrepareUploadResult() {
         // 1. 手动释放每个动态分配的 token 字符串
-        for (int i = 0; i < fileTokens.Size(); i++) {
-            char* token = *fileTokens.AtData(i);
-            free(token); // 或 delete[]，取决于分配方式
+        for (int i = 0; i < len(fileTokens); i++) {
+            Str* token = fileTokens.AtData(i);
+            str::Free(*token); // 或 delete[]，取决于分配方式
         }
         if (sessionId) {
             str::Free(sessionId);
@@ -119,7 +119,7 @@ struct PrepareUploadResult {
 
 void FreePpInfo(PrepareUploadResult* ip);
 // Mittente (L0): legge la risposta del ricevente.
-bool ParsePrepareUploadResponse(const char* body, PrepareUploadResult* out);
+bool ParsePrepareUploadResponse(Str body, PrepareUploadResult* out);
 
 // --- Lato ricevente (L1) -------------------------------------------------
 

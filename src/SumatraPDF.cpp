@@ -4724,10 +4724,13 @@ static void GetFilesFromGetOpenFileName(OPENFILENAMEW* ofn, StrVec& filesOut) {
 
 static void GetFolderFilesFromGetOpenFileName(OPENFILENAMEW* ofn, StrVec& filesOut) {
     WCHAR* dir = ofn->lpstrFile;
+    // OutputDebugStringW(L"dir: ");
+    // OutputDebugStringW(dir);
     WCHAR* file = ofn->lpstrFile + ofn->nFileOffset;
+    // OutputDebugStringW(L"\nfile: ");
+    // OutputDebugStringW(file);
     // only a single file, full path
-    char* path;
-    path = ToUtf8Temp(dir);
+    TempStr path = ToUtf8Temp(dir);
     filesOut.Append(path);
     if (file[-1] != 0) {
         return;
@@ -4737,7 +4740,9 @@ static void GetFolderFilesFromGetOpenFileName(OPENFILENAMEW* ofn, StrVec& filesO
     while (*file) {
         path = ToUtf8Temp(path::JoinTemp(dir, file));
         filesOut.Append(path);
-        file += str::Leni(file) + 1;
+        file += len(file) + 1;
+        // OutputDebugStringW(L"\nfile: ");
+        // OutputDebugStringW(file);
     }
 }
 
@@ -4745,9 +4750,9 @@ static void GetFolderFilesFromGetOpenFileName(OPENFILENAMEW* ofn, StrVec& filesO
 //   - 若元素是目录，递归展开目录下所有文件并添加到 result
 //   - 若元素是文件，直接添加到 result
 void ExpandFilesAndFolders(const StrVec& filesAndFolders, StrVec& result) {
-    for (char* path : filesAndFolders) {
+    for (Str path : filesAndFolders) {
         if (dir::Exists(path)) {
-            DirIter di(path);
+            DirIter di{path};
             di.includeFiles = true;
             di.includeDirs = false;
             di.recurse = true;
@@ -4883,7 +4888,7 @@ bool OpenFileForHomePageList(MainWindow* win) {
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = win->hwndFrame;
 
-    ofn.lpstrFilter = GetFileFilterTemp();
+    ofn.lpstrFilter = GetFileFilterTemp().s;
     ofn.nFilterIndex = 1;
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_ALLOWMULTISELECT | OFN_EXPLORER;
 
@@ -4904,8 +4909,8 @@ bool OpenFileForHomePageList(MainWindow* win) {
     SelectionResult result = {NULL, 0};
     ofn.lCustData = (LPARAM)&result;
 #endif
-    AutoFreeWStr file = AllocArray<WCHAR>(ofn.nMaxFile);
-    ofn.lpstrFile = file;
+    TempWStr file = AllocArray<WCHAR>(ofn.nMaxFile);
+    ofn.lpstrFile = file.s;
 
     if (!GetOpenFileNameW(&ofn)) {
         return false;
@@ -4928,6 +4933,9 @@ bool OpenFileForHomePageList(MainWindow* win) {
     // StrVec files;
     win->homePageSelectedFiles.Reset();
     GetFolderFilesFromGetOpenFileName(&ofn, win->homePageSelectedFiles);
+    // for (int o = 0; o < win->homePageSelectedFiles.Size(); ++o) {
+    //     logf("HomePageSelectedFiles:(i=%d) %s\n", o, CStrTemp(win->homePageSelectedFiles.At(o)));
+    // }
     // GetFolderFilesFromGetOpenFileName(&ofn, files);
     // ExpandFilesAndFolders(files, win->homePageSelectedFiles);
     win->RedrawAll(true);
@@ -5015,8 +5023,8 @@ static void UploadFiles(MainWindow* win) {
     ExpandAllWithOutFirst(win->homePageSelectedFiles, files);
 
     // 2. 从配置读取服务器地址（gGlobalPrefs->remoteIp）
-    const char* remoteIp = gGlobalPrefs->remoteIp;
-    if (!remoteIp || !*remoteIp) {
+    Str remoteIp = gGlobalPrefs->remoteIp;
+    if (!remoteIp || !*remoteIp.s) {
         // 没有配置 RemoteIp，弹出提示
         MessageBoxW(win->hwndFrame, L"请在高级设置中配置 RemoteIp 选项", L"上传失败", MB_OK | MB_ICONWARNING);
         return;
@@ -5028,7 +5036,7 @@ static void UploadFiles(MainWindow* win) {
         d->filePaths = files; // StrVec 复制
         d->port = 8880;       // 或从配置读取
         d->urlA = nullptr;
-        d->serverA = str::Dup(remoteIp);
+        d->serverA = str::Dup(remoteIp).s;
         d->stopQueue = nullptr;
 
         auto fn = MkFunc0(
@@ -5059,9 +5067,9 @@ static void UploadFiles(MainWindow* win) {
         auto* d = new UploadTaskData();
         d->win = win;
         d->filePaths = uFiles; // StrVec 复制
-        d->serverA = str::Dup(remoteIp);
+        d->serverA = str::Dup(remoteIp).s;
         d->port = 8880; // 或从配置读取
-        d->urlA = str::Dup("/upload");
+        d->urlA = str::Dup("/upload").s;
         d->stopQueue = stopQueue;
         // d->progress = gProgress;
 

@@ -82,7 +82,7 @@ bool StrQueue::IsStopped() {
 // retuns sentinel value if no more strings
 // use IsSentinel() to check if returned value is a sentinel
 Str StrQueue::PopFront() {
-    HANDLE waitHandles[] = { hEvent, hStopEvent };
+    HANDLE waitHandles[] = {hEvent, hStopEvent};
 again:
     if (isStopped) {
         return nullptr;

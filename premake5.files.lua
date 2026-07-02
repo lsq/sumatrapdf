@@ -1419,16 +1419,16 @@ function efi_files()
 end
 
 function test_util_files()
-  files_in_dir("src/utils/protocol", {
+  files_in_dir("src/base/protocol", {
     "Constants.h",
     "Models.*",
     "Fingerprint.*",
   })
-  files_in_dir("src/utils/net", {
+  files_in_dir("src/base/net", {
     "IHttpClient.h",
     "HttpClient.*",
   })
-  files_in_dir("src/utils/client", {
+  files_in_dir("src/base/client", {
     "FileSource.*",
     "UploadSession.*",
   })
@@ -1445,6 +1445,7 @@ function test_util_files()
     "Crypto.*",
     "CssParser.*",
     "Dict.*",
+    "DirIter.*",
     "DbgHelpDyn.*",
     "DirScan.*",
     "Dpi.*",
@@ -1453,8 +1454,8 @@ function test_util_files()
     "HtmlTags.*",
     "JsonParser.*",
     "JsonUtil.*",
-    "HttpUtil.*",
-    "ThreadUtil.*",
+    "Http.*",
+    "Thread.*",
     "Log.*",
     "Scoped.*",
     "SettingsUtil.*",

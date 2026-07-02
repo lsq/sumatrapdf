@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { detectVisualStudio2026, runLogged } from "./util";
+import { detectVisualStudio2022, runLogged } from "./util";
 import { clearDirPreserveSettings } from "./clean";
 
 let clean = false;
@@ -15,7 +15,7 @@ async function main() {
     }
   }
 
-  const { msbuildPath } = detectVisualStudio2026();
+  const { msbuildPath } = detectVisualStudio2022();
   const sln = String.raw`vs2022\SumatraPDF.sln`;
   const t = `/t:SumatraPDF-dll;SumatraPDF`;
   // const t = `/t:SumatraPDF;test_util`;

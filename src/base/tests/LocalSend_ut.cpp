@@ -1,11 +1,12 @@
-#include "utils/BaseUtil.h"
-#include "utils/client/UploadSession.h"
-#include "utils/net/IHttpClient.h"
-#include "utils/protocol/Constants.h"
-#include "utils/client/FileSource.h"
-#include "utils/protocol/Fingerprint.h"
-#include "utils/protocol/Models.h"
-#include "utils/net/HttpClient.h"
+#include "base/Base.h"
+#include "base/client/UploadSession.h"
+#include "base/net/IHttpClient.h"
+#include "base/protocol/Constants.h"
+#include "base/client/FileSource.h"
+#include "base/protocol/Fingerprint.h"
+#include "base/protocol/Models.h"
+#include "base/net/HttpClient.h"
+#include "base/DirIter.h"
 
 using namespace LocalSend;
 
@@ -22,20 +23,20 @@ static const StructInfo gMyStructInfo = {sizeof(MyStruct), 2, gMyStructFields, "
 
 HttpResponse test() {
     HttpResponse res;
-    res.url.Append("https://127.0.0.1:8080");
+    res.url = str::Dup("https://127.0.0.1:8080");
     res.data.Append("hello");
-    printf("Inside: data=%s\n", res.data.Get()); // 假设有 c_str()
+    printf("Inside: data=%s\n", ToCStr(res.data)); // 假设有 c_str()
     return res;
 }
 
 void TestHttpResponse() {
     HttpResponse r = test();
-    printf("Outside:url=%s\n data=%s\n", r.url.Get(), r.data.Get()); // 能正常打印吗？
+    printf("Outside:url=%s\n data=%s\n", r.url.s, ToCStr(r.data)); // 能正常打印吗？
 }
 
 void TestHttpPostFile() {
     HttpClient hc;
-    StrBuilder header;
+    str::Builder header;
 
     header.Append("Content-Type: images/png");
 
@@ -74,25 +75,25 @@ void TestHttpPostFile() {
 void TestHttpPost() {
     // 可以参考 UpdateCheckAsync
     HttpClient httpc;
-    StrBuilder header;
-    StrBuilder body;
+    str::Builder header;
+    str::Builder body;
     header.Append("Content-Type: application/json");
     // body.Append("{\"titile\": \"foo\", \"body\": \"bar\", \"userId\": 1}");
     body.Append(R"({"titile": "foo", "body": "bar", "userId": 1})");
     HttpResponse rsp = httpc.Post("localhost", 3000, "/post", &header, &body);
 
     if (rsp.IsOk()) {
-        printf("LocalHost Response: %s\n", rsp.data.Get());
+        printf("LocalHost Response: %s\n", ToCStr(rsp.data));
     } else {
         printf("LocalHost response code: %d, error no: %d\n", (int)rsp.httpStatusCode, (int)rsp.error);
     }
 
-    TempStr url = str::FormatTemp("/post?sid=1&file=%s", url::UrlEncodeTemp("文件ID1"));
+    TempStr url = fmt("/post?sid=1&file=%s", url::UrlEncodeTemp("文件ID1"));
     // rsp = httpc.Post("localhost", 3000, "/post?sid=1&hello=lsq" ,&header,  &body);
     rsp = httpc.Post("localhost", 3000, url, &header, &body);
 
     if (rsp.IsOk()) {
-        printf("LocalHost Response: %s\n", rsp.data.Get());
+        printf("LocalHost Response: %s\n", ToCStr(rsp.data));
     } else {
         printf("LocalHost response code: %d, error no: %d\n", (int)rsp.httpStatusCode, (int)rsp.error);
     }
@@ -112,13 +113,13 @@ void TestPrepareUpload() {
     PrepareUploadResult pur{};
     bool ok = ParsePrepareUploadResponse(preUPloadResult, &pur);
     if (ok) {
-        printf("pur->sessionId=%s\n", pur.sessionId);
-        printf("pur.fileToken.size=%d\n", pur.fileTokens.Size());
+        printf("pur->sessionId=%s\n", pur.sessionId.s);
+        printf("pur.fileToken.size=%d\n", len(pur.fileTokens));
 
-        for (int i = 0; i < pur.fileTokens.Size(); i++) {
-            char* key = pur.fileTokens.At(i);
-            char** value = (char**)pur.fileTokens.AtData(i);
-            printf("pur.fileToken.key=%s pur.fileToken.value=%s\n", key, *value);
+        for (int i = 0; i < len(pur.fileTokens); i++) {
+            Str key = pur.fileTokens.At(i);
+            Str* value = (Str*)pur.fileTokens.AtData(i);
+            printf("pur.fileToken.key=%s pur.fileToken.value=%s\n", key.s, (*value).s);
         }
     }
 }
@@ -126,12 +127,12 @@ void TestPrepareUpload() {
 void TestBuildPrepareUpload(const DeviceInfo* info, const StrVecWithData<FileMetadata*>* fm) {
     TempStr js = BuildPrepareUpload(info, fm);
 
-    printf("BuildPrepareUpload->json: %s\n", js);
+    printf("BuildPrepareUpload->json: %s\n", js.s);
 }
 
 int TestUploadSession(DeviceInfo* info, const StrVecWithData<FileMetadata*>* fm) {
     int port = kDefaultPort;
-    char* host = str::Dup("192.168.124.27");
+    Str host = str::Dup("192.168.124.3");
 
     HttpClient http;
 
@@ -170,26 +171,45 @@ int TestUploadSession(DeviceInfo* info, const StrVecWithData<FileMetadata*>* fm)
         return 1;
     }
 
-    printf("Sessione: %s\n", report.sessionId);
+    printf("Sessione: %s\n", report.sessionId.s);
     for (const auto& f : report.files) {
-        printf("  [%-9s] %s%s%s\n", StatusText(f.status), f.fileName, str::IsEmpty(f.detail) ? "" : "  -> ", f.detail);
-        free(f.detail);
+        printf("  [%-9s] %s%s%s\n", StatusText(f.status), f.fileName.s, str::IsEmpty(f.detail) ? "" : "  -> ",
+               f.detail.s);
+        str::Free(f.detail);
     }
 
     printf("report->AllSent: %s\n", report.AllSent() ? "true" : "false");
     return report.AllSent() ? 0 : 1;
 }
 
+void TestDirIter() {
+    Str st = ("E:\\temp\\报销");
+    // Str st = ("E:\\temp\\t1");
+    auto dr = DirIter{st};
+    // dr.includeDirs = false;
+    // dr.includeFiles = true;
+    dr.recurse = true;
+
+    for (DirIterEntry* de : dr) {
+        printf("d->filepath:%s\n", de->filePath.s);
+    }
+}
+
 void TestLocalSend() {
     printf("Begining to run LocalSend test ...\n");
+
+    printf("Testing TestDirIter\n--------------------\n");
+    TestDirIter();
+
     int port = kDefaultPort;
-    char* alias = str::Dup("Honey Ratel");
+    Str alias = str::Dup("Honey Ratel");
     StrVec p;
     StrVec* paths = &p;
     // paths->Append(str::DupTemp("out/image/file1.Png"));
     // paths->Append(str::DupTemp("out/image/file2.pnG"));
     paths->Append(("out/image/file1.Png"));
     paths->Append(("out/image/file2.pnG"));
+    // paths->Append(("d:/Backup/Downloads/FlClash-0.8.94-android-arm64-v8a.apk"));
 
     if (paths->IsEmpty()) {
         printf("path is empty!\n");
@@ -198,10 +218,10 @@ void TestLocalSend() {
 
     StrVecWithData<FileMetadata*> files;
 
-    for (int i = 0; i < paths->Size(); ++i) {
+    for (int i = 0; i < len(*paths); ++i) {
         FileMetadata* m = (FileMetadata*)DeserializeStruct(&gFileMetadataInfo, nullptr);
-        char* id = str::Format("file-%d", i + 1);
-        if (!BuildFileMetadata(paths->At(i), id, m)) {
+        Str id = str::Dup(fmt("file-%d", i + 1));
+        if (!BuildFileMetadata(paths->At(i), paths->At(i), id.s, m)) {
             // return 1;
             printf("Error: BuildFileMetadata failed!\n");
         }
@@ -215,36 +235,38 @@ void TestLocalSend() {
     // info->fingerprint = GenerateFingerprint();
     info->fingerprint = LoadOrCreateFingerprint("./localsend_fingerprint");
 
-    printf("before free:\n alias=%s\n", alias);
+    printf("before free:\n alias=%s\n", alias.s);
     printf(
         "DeviceInfo:\n alias=%s\n version=%s\n deviceModel=%s\n deviceType=%s\n fingerprint=%s\n prot=%d\n "
         "protocol=%s\n download=%s\n",
-        info->alias, info->version, info->deviceModel, info->deviceType, info->fingerprint ? info->fingerprint : "null",
-        info->port, info->protocol, info->download ? "true" : "false");
+        info->alias.s, info->version.s, info->deviceModel.s, info->deviceType.s,
+        info->fingerprint ? info->fingerprint.s : "null", info->port, info->protocol.s,
+        info->download ? "true" : "false");
 
     // FreeStruct(&gDeviceInfoInfo, info);
     alias = nullptr;
-    if (alias != nullptr) {
-        printf("after free:\n alias=%s\n", alias);
+    if (!alias) {
+        printf("after free:\n alias=%s\n", alias.s);
         printf(
             "DeviceInfo:\n alias=%s\n version=%s\n deviceModel=%s\n deviceType=%s\n fingerprint=%s\n prot=%d\n "
             "protocol=%s\n download=%s\n",
-            info->alias, info->version, info->deviceModel, info->deviceType,
-            info->fingerprint ? info->fingerprint : "null", info->port, info->protocol,
+            info->alias.s, info->version.s, info->deviceModel.s, info->deviceType.s,
+            info->fingerprint ? info->fingerprint.s : "null", info->port, info->protocol.s,
             info->download ? "true" : "false");
     } else {
         printf("Free successful!\n");
     }
 
-    printf("files: %d - FileMetadatas: %d\n", paths->Size(), files.Size());
+    printf("files: %d - FileMetadatas: %d\n", len(*paths), len(files));
     FileMetadata* t;
-    for (int i = 0; i < files.Size(); i++) {
+    for (int i = 0; i < len(files); i++) {
         printf("i=%d\n", i);
         t = *files.AtData(i);
         printf(
             "FileMetadata:\n id=%s\n fileName=%s\n size=%lld\n fileType=%s\n sha256=%s\n preview=%s\n modified=%s\n "
             "accessed=%s\n localPath=%s\n",
-            t->id, t->fileName, t->size, t->fileType, t->sha256, t->preview, t->modified, t->accessed, t->localPath);
+            t->id.s, t->fileName.s, t->size, t->fileType.s, t->sha256.s, t->preview.s, t->modified.s, t->accessed.s,
+            t->localPath.s);
         // FreeStruct(&gFileMetadataInfo, t);
     }
 

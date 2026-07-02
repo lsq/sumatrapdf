@@ -2,7 +2,6 @@
    License: Simplified BSD (see COPYING.BSD) */
 
 #include "Base.h"
-#include "common/common.h"
 
 #if !defined(_MSC_VER)
 #define _strdup strdup
@@ -996,11 +995,13 @@ void DecodeInPlace(Str url) {
     url.s[dst] = '\0';
     url.len = dst;
 }
+// 将字符串中不安全或有特殊含义的字符编码为 %XX 格式（RFC 3986）
+// unreserved characters (A-Z a-z 0-9 - _ . ~) 保持原样，其余编码
 TempStr UrlEncodeTemp(const char* s) {
     if (!s) {
         return nullptr;
     }
-    StrBuilder out;
+    str::Builder out;
     for (const u8* p = (const u8*)s; *p; p++) {
         u8 c = *p;
         bool isUnreserved = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ||
@@ -1008,10 +1009,10 @@ TempStr UrlEncodeTemp(const char* s) {
         if (isUnreserved) {
             out.AppendChar((char)c);
         } else {
-            out.AppendFmt("%%%02X", (unsigned int)c);
+            out.Append(fmt("%%%02X", (unsigned int)c));
         }
     }
-    return out.StealData(GetTempArena());
+    return ToStrTemp(out);
 }
 } // namespace url
 

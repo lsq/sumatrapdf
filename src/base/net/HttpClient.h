@@ -5,7 +5,7 @@
 #ifndef _LOCALSEND_SOCKET_HTTP_CLIENT_H
 #define _LOCALSEND_SOCKET_HTTP_CLIENT_H
 
-#include "utils/net/IHttpClient.h"
+#include "base/net/IHttpClient.h"
 
 namespace LocalSend {
 
@@ -19,12 +19,12 @@ class HttpClient : public IHttpClient {
     // protocollo LocalSend).
     // void EnableTls();
 
-    HttpResponse Post(const char* host, int port, const char* path, StrBuilder* contentType, StrBuilder* body) override;
+    HttpResponse Post(Str host, int port, Str path, str::Builder* contentType, str::Builder* body) override;
 
-    HttpResponse PostFile(const char* host, int port, const char* path, StrBuilder* contentType, const char* filePath,
-                          int maxQueueChunks, int chunkSize, const Func1<HttpUploadProgress*>& cbProgress) override;
-    HttpResponse PostFile(const char* host, int port, const char* path, StrBuilder* contentType, const char* filePath,
-                          int maxQueueChunks, int chunkSize, void* /*nullCallback*/
+    HttpResponse PostFile(Str host, int port, Str path, str::Builder* contentType, Str filePath, int maxQueueChunks,
+                          int chunkSize, const Func1<HttpUploadProgress*>& cbProgress) override;
+    HttpResponse PostFile(Str host, int port, Str path, str::Builder* contentType, Str filePath, int maxQueueChunks,
+                          int chunkSize, void* /*nullCallback*/
     ) {
         return PostFile(host, port, path, contentType, filePath, maxQueueChunks, chunkSize,
                         Func1<HttpUploadProgress*>());

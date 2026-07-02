@@ -223,7 +223,7 @@ static bool SerializeField(str::Builder& out, const u8* base, const FieldInfo& f
             out.Append(fmt("%d", *(int*)fieldPtr));
             return true;
         case SettingType::Int64:
-            out.AppendFmt("%lld", *(i64*)fieldPtr);
+            out.Append(fmt("%lld", *(i64*)fieldPtr));
             return true;
         case SettingType::Float:
             out.Append(fmt("%g", *(float*)fieldPtr));
@@ -335,8 +335,8 @@ static void deserializeField(const FieldInfo& field, u8* base, Str value) {
 
         case SettingType::Int64: {
             i64* i64Ptr = (i64*)fieldPtr;
-            if (value) {
-                *i64Ptr = _atoi64(value);
+            if (!str::IsNull(value)) {
+                *i64Ptr = ParseInt64(value);
             } else {
                 *i64Ptr = (i64)field.value;
             }

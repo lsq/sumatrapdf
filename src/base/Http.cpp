@@ -278,7 +278,7 @@ Exit:
 
 void FileReaderThread(FileReaderData* td) {
     // AutoDelete del(td); // 下面已经用delete管理了，不需要了
-    WCHAR* pathW = ToWStrTemp(td->filePath);
+    WCHAR* pathW = ToWStrTemp(td->filePath).s;
     HANDLE hFile =
         CreateFileW(pathW, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (hFile == INVALID_HANDLE_VALUE) {
@@ -324,7 +324,8 @@ void FileReaderThread(FileReaderData* td) {
 // -----------------------------------------------------------------------
 bool HttpPostFileStream(const char* serverA, int port, const char* urlPathA, const char* filePath, int maxQueueChunks,
                         int chunkSize, Func1<HttpUploadProgress*>& cbProgress) {
-    logf("HttpPostFileStream: server='%s' port=%d path='%s' file='%s'\n", serverA, port, urlPathA, filePath);
+    logf("HttpPostFileStream: server='%s' port=%d path='%s' file='%s'\n", Str(serverA), port, Str(urlPathA),
+         Str(filePath));
 
     bool ok = false;
     HINTERNET hInet = nullptr, hConn = nullptr, hReq = nullptr;
@@ -342,13 +343,13 @@ bool HttpPostFileStream(const char* serverA, int port, const char* urlPathA, con
     BoundedByteQueue queue(maxQueueChunks);
     bool readerError = false;
 
-    auto td = new FileReaderData{&queue, str::Dup(filePath), chunkSize, &readerError};
+    auto td = new FileReaderData{&queue, str::Dup(filePath).s, chunkSize, &readerError};
     auto fn = MkFunc0(FileReaderThread, td);
     RunAsync(fn, "HttpPostFileStreamReader");
 
     // 建立 HTTP 连接
-    WCHAR* server = ToWStrTemp(serverA);
-    WCHAR* urlPath = ToWStrTemp(urlPathA);
+    WCHAR* server = ToWStrTemp(serverA).s;
+    WCHAR* urlPath = ToWStrTemp(urlPathA).s;
 
     hInet = InternetOpenW(kUserAgent, INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
     if (!hInet) {
@@ -379,9 +380,9 @@ bool HttpPostFileStream(const char* serverA, int port, const char* urlPathA, con
 
     // 添加 Content-Length 头
     {
-        TempStr hdr = str::FormatTemp("Content-Length: %lld\r\nContent-Type: application/octet-stream\r\n\r\n",
-                                      (long long)fileSize);
-        WCHAR* hdrW = ToWStrTemp(hdr);
+        TempStr hdr =
+            fmt("Content-Length: %lld\r\nContent-Type: application/octet-stream\r\n\r\n", (long long)fileSize);
+        WCHAR* hdrW = CWStrTemp(hdr);
         HttpAddRequestHeadersW(hReq, hdrW, (DWORD)-1, HTTP_ADDREQ_FLAG_ADD);
     }
 
@@ -458,8 +459,8 @@ struct UploadWorkerCtx {
 
 static void UploadWorkerThread(UploadWorkerCtx* ctx) {
     for (;;) {
-        char* path = ctx->queue->PopFront();
-        if (!path) {
+        Str path = ctx->queue->PopFront();
+        if (!path || !path.s) {
             // Stop() 触发，立即退出
             break;
         }
@@ -470,14 +471,14 @@ static void UploadWorkerThread(UploadWorkerCtx* ctx) {
 
         // 找到对应的 FileUploadState（按路径匹配）
         FileUploadState* fstate = nullptr;
-        for (int i = 0; i < ctx->progress->fileStates.Size(); i++) {
+        for (int i = 0; i < len(ctx->progress->fileStates); i++) {
             if (str::Eq(ctx->progress->fileStates[i]->filePath, path)) {
                 fstate = ctx->progress->fileStates[i];
                 break;
             }
         }
         if (!fstate) {
-            free(path);
+            str::Free(path);
             continue;
         }
 
@@ -501,7 +502,7 @@ static void UploadWorkerThread(UploadWorkerCtx* ctx) {
             },
             &cbArgs);
 
-        bool ok = HttpPostFileStream(ctx->serverA, ctx->port, ctx->urlA, path, 4, ctx->chunkSize, perChunkCb);
+        bool ok = HttpPostFileStream(ctx->serverA, ctx->port, ctx->urlA, path.s, 4, ctx->chunkSize, perChunkCb);
 
         fstate->isActive = false;
         fstate->isDone = true;
@@ -513,14 +514,14 @@ static void UploadWorkerThread(UploadWorkerCtx* ctx) {
         // 完成后再触发一次回调，通知文件级状态变化
         ctx->progress->cbProgress.Call(ctx->progress);
 
-        free(path);
+        str::Free(path);
     }
     DestroyTempArena();
 }
 
 int HttpPostFilesStreamPool(const char* serverA, int port, const char* urlA, const StrVec& filePaths, int workerCount,
                             int chunkSize, const Func1<UploadProgress*>& cbProgress, StrQueue* stopQueue) {
-    int n = filePaths.Size();
+    int n = len(filePaths);
     if (n == 0) {
         return 0;
     }
@@ -541,7 +542,7 @@ int HttpPostFilesStreamPool(const char* serverA, int port, const char* urlA, con
         // FileUploadState& fs = *progress.fileStates.AppendBlanks(1);
         // FileUploadState* fs = progress->fileStates.AppendBlanks(1);
         auto* fs = new FileUploadState();
-        fs->filePath = filePaths.At(i);
+        fs->filePath = filePaths.At(i).s;
         fs->totalBytes = file::GetSize(fs->filePath);
         if (fs->totalBytes > 0) {
             progress->totalBytes += fs->totalBytes;
@@ -573,14 +574,14 @@ int HttpPostFilesStreamPool(const char* serverA, int port, const char* urlA, con
         if (queue->IsStopped()) {
             break;
         }
-        queue->Append(filePaths.At(i));
+        queue->append(filePaths.At(i));
     }
     if (!queue->IsFinished()) {
         queue->MarkFinished();
     }
 
     // 等待所有工作线程退出
-    for (int i = 0; i < hThreads.Size(); i++) {
+    for (int i = 0; i < len(hThreads); i++) {
         HANDLE h = hThreads[i];
         WaitForSingleObject(h, INFINITE);
         SafeCloseHandle(&h);
