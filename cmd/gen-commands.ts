@@ -182,6 +182,8 @@ const commandsRaw = [
     "CmdShowErrors", "Show Errors...",
     "CmdClearHistory", "Clear History",
     "CmdReopenLastClosedFile", "Reopen Last Closed",
+    "CmdSendToRemote", "Send To Remote",
+    "CmdOpenHomePage", "Open Home Page",
     "CmdNextTab", "Next Tab",
     "CmdPrevTab", "Previous Tab",
     "CmdNextTabSmart", "Smart Next Tab",

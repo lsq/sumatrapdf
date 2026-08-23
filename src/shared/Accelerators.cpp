@@ -141,6 +141,8 @@ static Accel gBuiltInAccelerators[] = {
     {{kShift | kVirt, VK_F11}, CmdTogglePresentationMode},
     {{kShift | kCtrl | kVirt, 'L'}, CmdToggleFullscreen},
     {{kVirt, VK_F11}, CmdToggleFullscreen},
+    {{kCtrl | FVIRTKEY, 'H'}, CmdOpenHomePage},
+    {{kCtrl | FVIRTKEY, 'U'}, CmdSendToRemote},
     {{kShift | kCtrl | kVirt, 'H'}, CmdToggleAutomaticallyScroll},
     {{kVirt, VK_F12}, CmdToggleBookmarks},
     {{kShift | kVirt, VK_F12}, CmdNavigateTableOfContents},

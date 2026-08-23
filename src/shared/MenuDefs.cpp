@@ -103,6 +103,10 @@ MenuDef menuDefFile[] = {
         CmdSaveAs,
     },
     {
+        TrN("Send To Remote"),
+        CmdSendToRemote,
+    },
+    {
         TrN("Convert to PDF..."),
         CmdConvertToPDF,
     },

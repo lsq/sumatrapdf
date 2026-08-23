@@ -17,7 +17,7 @@ void UpdateTabIsError(WindowTab*);
 void SaveCurrentWindowTab(MainWindow*);
 void LoadModelIntoTab(WindowTab*);
 
-WindowTab* AddTabToWindow(MainWindow* win, WindowTab* tab, bool deferUpdate = false);
+WindowTab* AddTabToWindow(MainWindow* win, WindowTab* tab, bool deferUpdate = false, int insertAtIdx = -1);
 void TabsOnCloseWindow(MainWindow*);
 void TabsOnChangedDoc(MainWindow*);
 void TabsSelect(MainWindow* win, int tabIndex);

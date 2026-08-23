@@ -10,7 +10,7 @@
 #include "base/tests/UtAssert.h"
 
 void TestDirIter() {
-    Str st = ("E:\\temp\\报销");
+    Str st = StrL("E:\\temp\\报销");
     // Str st = ("E:\\temp\\t1");
     printf("path exists: %d\n", dir::Exists(st));
     auto dr = DirIter{st};

@@ -629,7 +629,7 @@ void GoToHomeTab(MainWindow* win) {
     LoadModelIntoTab(homeTab);
 }
 
-WindowTab* AddTabToWindow(MainWindow* win, WindowTab* tab, bool deferUpdate) {
+WindowTab* AddTabToWindow(MainWindow* win, WindowTab* tab, bool deferUpdate, int insertAtIdx) {
     ReportIf(!win);
     if (!win) {
         return nullptr;
@@ -660,6 +660,7 @@ WindowTab* AddTabToWindow(MainWindow* win, WindowTab* tab, bool deferUpdate) {
     // a failed load can arrive in a tab created for it (ShowLoadErrorInTab)
     newTab->isError = tab->loadState == WindowTab::LoadState::Error;
 
+    idx = insertAtIdx >= 0 ? insertAtIdx : idx;
     int insertedIdx = tabs->InsertTab(idx, newTab, !deferUpdate);
     ReportIf(insertedIdx == -1);
     if (!deferUpdate) {

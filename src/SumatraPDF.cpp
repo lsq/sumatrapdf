@@ -218,6 +218,33 @@ bool IsSessionRestoreFinished() {
 static bool RelayoutFrame(MainWindow* win, bool updateToolbars = true, int sidebarDx = -1);
 static void UpdateOverlayScrollbarPositions(MainWindow* win);
 
+static void OpenHomePage(MainWindow* win) {
+    /*
+    // 1. 查找已有的 Home 标签页
+    int nTabs = win->TabCount();
+    for (int i = 0; i < nTabs; i++) {
+        WindowTab* tab = win->GetTab(i);
+        if (tab->IsAboutTab()) {
+            logf("找到about page!\n");
+            win->tabsCtrl->SetSelected(i);
+            LoadModelIntoTab(tab);
+            return;
+        }
+    }
+
+    // 2. 没有 Home 标签页，新建一个（镜像 AddTabToWindow 中的逻辑）
+    logf("没有找到home page!\n");
+    WindowTab* homeTab = new WindowTab(win);
+    homeTab->type = WindowTab::Type::About;
+    AddTabToWindow(win, homeTab, false, 0);
+    win->currentTabTemp = homeTab;
+    LoadModelIntoTab(homeTab);
+    UpdateTabWidth(win);
+    */
+
+    GoToHomeTab(win);
+}
+
 static Str HwndName(HWND hwnd) {
     WCHAR cls[64]{};
     GetClassNameW(hwnd, cls, dimof(cls));
@@ -11779,6 +11806,14 @@ static LRESULT FrameOnCommand(MainWindow* win, HWND hwnd, UINT msg, WPARAM wp, L
             // with left mouse click
             extern bool gDisableInteractiveInverseSearch;
             gDisableInteractiveInverseSearch = !gDisableInteractiveInverseSearch;
+            break;
+        case CmdOpenHomePage:
+            OpenHomePage(win);
+            break;
+        // 如果没有 Home 标签页（noHomeTab=true 或被关闭），
+        // 可以新建一个 About 类型的 WindowTab 并插入
+        case CmdSendToRemote:
+            // UploadFiles(win);
             break;
 
         default:

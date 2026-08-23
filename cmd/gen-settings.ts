@@ -1462,6 +1462,8 @@ const globalPrefs: Field[] = [
       "(FileStates); closing a document doesn't remove it from the history. " +
       "Also required for saving SessionData",
   ),
+  field("RemoteIp", Str, "localhost", "socket ip address"),
+  field("LocalSend", Bool, true, "if true, we use localsend client to send files"),
   field(
     "RememberStatePerDocument",
     Bool,
