@@ -304,6 +304,7 @@ struct MainWindow { // NOLINT(clang-analyzer-optin.performance.Padding)
     // (the toc box window can be hidden and its rect stale, e.g. when only
     // favorites are showing). 0 = not laid out yet
     int sidebarDx = 0;
+    StrVec homePageSelectedFiles; // files selected via "Open a document" in list view
     // extra frame width added so showing the sidebar does not shrink the canvas
     int sidebarGrewFrameDx = 0;
 

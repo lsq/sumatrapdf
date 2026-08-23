@@ -7,6 +7,8 @@
 #include "base/WinDynCalls.h"
 #include "base/DirScan.h"
 #include <dwmapi.h>
+#include <shellapi.h>
+#include <cmath>
 #include "gui/Dpi.h"
 #include "base/File.h"
 #include "base/FileWatcher.h"
@@ -156,6 +158,11 @@ using Gdiplus::SolidBrush;
 constexpr const WCHAR* kCanvasClassName = L"SUMATRA_PDF_CANVAS";
 
 constexpr const WCHAR* kSumatraWindowTitleW = L"SumatraPDF";
+
+// Explorer 对话框内部私有消息
+#ifndef WM_GETISHELLBROWSER
+#define WM_GETISHELLBROWSER (WM_USER + 7)
+#endif
 
 // used to show it in debug, but is not very useful,
 // so always disable
@@ -6169,6 +6176,472 @@ void RemoveFailedFiles(StrVec& files) {
     }
 }
 
+static TempWStr GetFileFilterTemp() {
+    OpenFileFilterList filters;
+    BuildOpenFileFilters(filters);
+    // Prepare the file filters (use \1 instead of \0 so that the
+    // double-zero terminated string isn't cut by the string handling
+    // methods too early on)
+    wstr::Builder fileFilter;
+    for (int i = 0; i < len(filters.names); i++) {
+        if (filters.patterns[i] && filters.names[i]) {
+            fileFilter.Append(filters.names[i]);
+            fileFilter.AppendChar('\1');
+            fileFilter.Append(filters.patterns[i]);
+            if (fileFilter.LastChar() == ';') fileFilter.RemoveLast();
+            fileFilter.AppendChar('\1');
+        }
+    }
+    WStr fl = fileFilter.TakeWStr();
+    wstr::TransCharsInPlace(fl, WStrL(L"\1"), WStrL(L"\0"));
+    return fl;
+}
+
+#if 0
+typedef struct {
+    wchar_t** selectedPaths;
+    UINT selectedCount;
+} SelectionResult;
+
+// 主对话框子类化过程
+static LRESULT CALLBACK HookedDialogProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    if (uMsg == WM_COMMAND && LOWORD(wParam) == IDOK) {
+
+        // 从窗口中获取结果存储指针
+        SelectionResult* res = (SelectionResult*)GetWindowLongPtrW(hDlg, GWLP_USERDATA);
+        WNDPROC originalProc = NULL;
+
+        if (res) {
+            // 我们把原窗口过程存到了另一个自定义属性 "OldProc" 中
+            originalProc = (WNDPROC)GetPropW(hDlg, L"OldProc");
+        }
+
+        IShellBrowser* pBrowser = (IShellBrowser*)SendMessageW(hDlg, WM_GETISHELLBROWSER, 0, 0);
+        if (!pBrowser) return 0;
+
+        IShellView* pView = NULL;
+        HRESULT hr = pBrowser->lpVtbl->QueryActiveShellView(pBrowser, &pView);
+        if (FAILED(hr) || !pView) return 0;
+
+        IDataObject* pDataObject = NULL;
+        hr = pView->lpVtbl->GetItemObject(pView, SVGIO_SELECTION, &IID_IDataObject, (void**)&pDataObject);
+        pView->lpVtbl->Release(pView); // 早释放
+
+        if (SUCCEEDED(hr) && pDataObject) {
+            FORMATETC fmt = { CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+            STGMEDIUM stg = {0};
+            hr = pDataObject->lpVtbl->GetData(pDataObject, &fmt, &stg);
+            if (SUCCEEDED(hr)) {
+                HDROP hDrop = (HDROP)GlobalLock(stg.hGlobal);
+                if (hDrop && res) {
+                    UINT fileCount = DragQueryFileW(hDrop, 0xFFFFFFFF, NULL, 0);
+                    if (fileCount > 0) {
+                        res->selectedPaths = (wchar_t**)calloc(fileCount, sizeof(wchar_t*));
+                        if (res->selectedPaths) {
+                            res->selectedCount = 0;
+                            for (UINT i = 0; i < fileCount; ++i) {
+                                wchar_t szPath[MAX_PATH];
+                                if (DragQueryFileW(hDrop, i, szPath, MAX_PATH)) {
+                                    size_t len = wcslen(szPath) + 1;
+                                    res->selectedPaths[i] = (wchar_t*)malloc(len * sizeof(wchar_t));
+                                    if (res->selectedPaths[i]) {
+                                        wcscpy_s(res->selectedPaths[i], len, szPath);
+                                        res->selectedCount++;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    GlobalUnlock(stg.hGlobal);
+                }
+                ReleaseStgMedium(&stg);
+            }
+            pDataObject->lpVtbl->Release(pDataObject);
+        }
+
+        EndDialog(hDlg, IDOK);
+        return 0;
+    }
+
+    // WNDPROC originalProc = (WNDPROC)GetWindowLongPtrW(hDlg, GWLP_USERDATA);
+    WNDPROC originalProc = (WNDPROC)GetPropW(hDlg, L"OldProc");
+    if (originalProc) {
+        return CallWindowProcW(originalProc, hDlg, uMsg, wParam, lParam);
+    }
+    return DefWindowProcW(hDlg, uMsg, wParam, lParam);
+}
+
+// OFN 钩子过程
+static UINT_PTR CALLBACK OFNHookProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
+        case WM_INITDIALOG: {
+            HWND hParent = GetParent(hDlg);
+            if (hParent) {
+                // 1. 从lParam中获取OPENFILENAMEW结构体
+                LOPENFILENAMEW pOfn = (LOPENFILENAMEW)lParam;
+                if (pOfn && pOfn->lCustData) {
+                    // 2. 将结果存储结构体指针放入父窗口的 USERDATA
+                    SetWindowLongPtrW(hParent, GWLP_USERDATA, (LONG_PTR)pOfn->lCustData);
+                }
+
+                // 3. 改变窗口过程（子类化），原过程改用 SetPropW 存储，避免覆盖 USERDATA
+                WNDPROC oldProc = (WNDPROC)SetWindowLongPtrW(hParent, GWLP_WNDPROC, (LONG_PTR)HookedDialogProc);
+                SetPropW(hParent, L"OldProc", (HANDLE)oldProc);
+            }
+            break;
+        }
+        case WM_DESTROY: {
+            HWND hParent = GetParent(hDlg);
+            if (hParent) {
+                WNDPROC oldProc = (WNDPROC)GetPropw(hParent, L"OldProc");
+                if (oldProc) {
+                    SetWindowLongPtrW(hParent, GWLP_WNDPROC, (LONG_PTR)oldProc);
+                }
+                RemovePropW(hParent, L"OldProc");
+            }
+            break;
+        }
+    }
+    return 0;
+}
+#endif
+// 由于原函数是通过解析 ofn.lpstrFile 缓冲区（即 <dir>\0<file1>\0<file2>\0\0 的格式）来提取文件的，我们只需要在 Hook
+// 触发 IDOK 时，把选中的多选文件手动拼接成这种标准格式，然后写回 ofn.lpstrFile 中即可 主对话框子类化过程
+static LRESULT CALLBACK HookedDialogProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    if (uMsg == WM_COMMAND && LOWORD(wParam) == IDOK) {
+        // 从 USERDATA 中获取当初传入的 OPENFILENAMEW 指针
+        OPENFILENAMEW* pOfn = (OPENFILENAMEW*)GetWindowLongPtrW(hDlg, GWLP_USERDATA);
+
+        IShellBrowser* pBrowser = (IShellBrowser*)SendMessageW(hDlg, WM_GETISHELLBROWSER, 0, 0);
+        if (!pBrowser) return 0;
+
+        IShellView* pView = NULL;
+        HRESULT hr = pBrowser->QueryActiveShellView(&pView);
+        if (FAILED(hr) || !pView) return 0;
+
+        IDataObject* pDataObject = NULL;
+        hr = pView->GetItemObject(SVGIO_SELECTION, IID_IDataObject, (void**)&pDataObject);
+        pView->Release(); // 尽早释放
+
+        if (SUCCEEDED(hr) && pDataObject) {
+            FORMATETC fmt = {CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+            STGMEDIUM stg = {0};
+            hr = pDataObject->GetData(&fmt, &stg);
+            if (SUCCEEDED(hr)) {
+                HDROP hDrop = (HDROP)GlobalLock(stg.hGlobal);
+                if (hDrop && pOfn && pOfn->lpstrFile && pOfn->nMaxFile > 0) {
+                    UINT fileCount = DragQueryFileW(hDrop, 0xFFFFFFFF, NULL, 0);
+                    logf("fileCount: %d\n", fileCount);
+                    if (fileCount > 0) {
+                        // 准备缓冲区指针和剩余大小
+                        WCHAR* pWrite = pOfn->lpstrFile;
+                        size_t maxLen = pOfn->nMaxFile;
+                        size_t curPos = 0;
+
+                        // 提取第一个文件的完整路径，用来切分出目录
+                        WCHAR szFirstPath[MAX_PATH] = {0};
+                        if (DragQueryFileW(hDrop, 0, szFirstPath, MAX_PATH)) {
+                            // 找到最后一个反斜杠，切分出文件夹路径
+                            WCHAR* pSlash = wcsrchr(szFirstPath, L'\\');
+                            if (pSlash) {
+                                *pSlash = L'\0';                    // 此时 szFirstPath 是纯文件夹路径
+                                WCHAR* pFileNameStart = pSlash + 1; // 第一个文件名
+
+                                // 1. 写入文件夹路径
+                                size_t dirLen = wcslen(szFirstPath);
+                                if (curPos + dirLen + 1 < maxLen) {
+                                    wcscpy_s(pWrite + curPos, maxLen - curPos, szFirstPath);
+                                    curPos += dirLen;
+                                    pOfn->nFileOffset = (WORD)(curPos + 1); // 记录文件名偏移量
+                                    pWrite[curPos++] = L'\0';               // 放入隔离符 \0
+                                }
+
+                                // wstr::Builder tPath;
+                                // 2. 写入第一个文件名
+                                size_t nameLen = wcslen(pFileNameStart);
+                                if (curPos + nameLen + 1 < maxLen) {
+                                    wcscpy_s(pWrite + curPos, maxLen - curPos, pFileNameStart);
+                                    curPos += nameLen;
+                                    pWrite[curPos++] = L'\0';
+                                    // tPath.Append(pFileNameStart);
+                                }
+
+                                // 3. 循环写入后续的文件名
+                                for (UINT i = 1; i < fileCount; ++i) {
+                                    WCHAR szPath[MAX_PATH] = {0};
+                                    if (DragQueryFileW(hDrop, i, szPath, MAX_PATH)) {
+                                        WCHAR* pName = wcsrchr(szPath, L'\\');
+                                        pName = pName ? (pName + 1) : szPath;
+
+                                        size_t nLen = wcslen(pName);
+                                        // tPath.Append(ToWStrTemp(str::Format(tPath.a,"正在写入第(%d)个文件名：%s\ncurPos:
+                                        // %d | nLen: %d | maxLen: %d\n", i, ToUtf8Temp(pName), curPos, nLen, maxLen)));
+                                        if (curPos + nLen + 1 < maxLen) {
+                                            wcscpy_s(pWrite + curPos, maxLen - curPos, pName);
+                                            curPos += nLen;
+                                            pWrite[curPos++] = L'\0';
+                                            // tPath.Append(ToWStrTemp(str::Format(tPath.a,"已写入第(%d)个文件名：%s\n",
+                                            // i, ToUtf8Temp(pName))));
+                                        }
+                                    }
+                                }
+
+                                // TempStr fn = ToUtf8Temp(tPath.TakeWStr());
+                                // logf("%s\n", fn);
+
+                                // 4. 写入末尾的双 \0 结束符
+                                if (curPos < maxLen) {
+                                    pWrite[curPos] = L'\0';
+                                }
+                            }
+                        }
+                    }
+                    GlobalUnlock(stg.hGlobal);
+                }
+                ReleaseStgMedium(&stg);
+            }
+            pDataObject->Release();
+        }
+
+        EndDialog(hDlg, IDOK);
+        return 0;
+    }
+
+    WNDPROC originalProc = (WNDPROC)GetPropW(hDlg, L"OldProc");
+    if (originalProc) {
+        return CallWindowProcW(originalProc, hDlg, uMsg, wParam, lParam);
+    }
+    return DefWindowProcW(hDlg, uMsg, wParam, lParam);
+}
+
+// OFN 钩子过程
+static UINT_PTR CALLBACK OFNHookProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
+        case WM_INITDIALOG: {
+            HWND hParent = GetParent(hDlg);
+            if (hParent) {
+                // 1. 将 OPENFILENAMEW 结构体指针绑定到父窗口
+                LPOPENFILENAMEW pOfn = (LPOPENFILENAMEW)lParam;
+                if (pOfn) {
+                    SetWindowLongPtrW(hParent, GWLP_USERDATA, (LONG_PTR)pOfn);
+                }
+
+                // 2. 子类化父窗口，原过程存入窗口属性属性 "OldProc"
+                WNDPROC oldProc = (WNDPROC)SetWindowLongPtrW(hParent, GWLP_WNDPROC, (LONG_PTR)HookedDialogProc);
+                SetPropW(hParent, L"OldProc", (HANDLE)oldProc);
+            }
+            break;
+        }
+        case WM_DESTROY: {
+            HWND hParent = GetParent(hDlg);
+            if (hParent) {
+                WNDPROC oldProc = (WNDPROC)GetPropW(hParent, L"OldProc");
+                if (oldProc) {
+                    SetWindowLongPtrW(hParent, GWLP_WNDPROC, (LONG_PTR)oldProc);
+                }
+                RemovePropW(hParent, L"OldProc");
+            }
+            break;
+        }
+    }
+    return 0;
+}
+
+static void GetFolderFilesFromGetOpenFileName(OPENFILENAMEW* ofn, StrVec& filesOut) {
+    WCHAR* dir = ofn->lpstrFile;
+    // OutputDebugStringW(L"dir: ");
+    // OutputDebugStringW(dir);
+    WCHAR* file = ofn->lpstrFile + ofn->nFileOffset;
+    // OutputDebugStringW(L"\nfile: ");
+    // OutputDebugStringW(file);
+    // only a single file, full path
+    TempStr path = ToUtf8Temp(dir);
+    filesOut.Append(path);
+    if (file[-1] != 0) {
+        return;
+    }
+    // the layout of lpstrFile is:
+    // <dir> 0 <file1> 0 <file2> 0 0
+    while (*file) {
+        path = ToUtf8Temp(path::JoinTemp(dir, file));
+        filesOut.Append(path);
+        file += len(file) + 1;
+        // OutputDebugStringW(L"\nfile: ");
+        // OutputDebugStringW(file);
+    }
+}
+
+// 遍历 filesAndFolders：
+//   - 若元素是目录，递归展开目录下所有文件并添加到 result
+//   - 若元素是文件，直接添加到 result
+void ExpandFilesAndFolders(const StrVec& filesAndFolders, StrVec& result) {
+    for (Str path : filesAndFolders) {
+        if (dir::Exists(path)) {
+            DirIter di{path};
+            di.includeFiles = true;
+            di.includeDirs = false;
+            di.recurse = true;
+            for (DirIterEntry* de : di) {
+                result.Append(de->filePath);
+            }
+        } else if (file::Exists(path)) {
+            result.Append(path);
+        }
+    }
+}
+
+void ExpandAllWithOutFirst(const StrVec& str, StrVec& result) {
+    StrVec tmpFiles;
+
+    result.Append(str.At(0));
+    SliceFirst(str, tmpFiles);
+    ExpandFilesAndFolders(tmpFiles, result);
+}
+
+bool OpenFileForHomePageList(MainWindow* win) {
+    if (!CanAccessDisk()) {
+        return false;
+    }
+
+    // don't allow opening different files in plugin mode
+    if (gPluginMode) {
+        return false;
+    }
+
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = win->hwndFrame;
+
+    TempWStr filter = GetFileFilterTemp();
+    ofn.lpstrFilter = filter.s;
+    ofn.nFilterIndex = 1;
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_ALLOWMULTISELECT | OFN_EXPLORER;
+
+    // OFN_ENABLEHOOK disables the new Open File dialog under Windows Vista
+    // and later, so don't use it and just allocate enough memory to contain
+    // several dozen file paths and hope that this is enough
+    // TODO: Use IFileOpenDialog instead (requires a Vista SDK, though)
+    ofn.nMaxFile = MAX_PATH * 50;
+    // if (false && !IsWindowsVistaOrGreater()) {
+    // #if 0
+    ofn.lpfnHook = OFNHookProc;
+    ofn.Flags |= OFN_ENABLEHOOK;
+    // ofn.nMaxFile = MAX_PATH / 2;
+// #endif
+// }
+// note: ofn.lpstrFile can be reallocated by GetOpenFileName -> FileOpenHook
+#if 0
+    SelectionResult result = {NULL, 0};
+    ofn.lCustData = (LPARAM)&result;
+#endif
+    TempWStr file = AllocArray<WCHAR>(ofn.nMaxFile);
+    ofn.lpstrFile = file.s;
+
+    if (!GetOpenFileNameW(&ofn)) {
+        return false;
+    }
+
+    // 4. 此时无论走哪个分支，只要触发了 HookedDialogProc 的 IDOK
+    // 结果都会被写进局部的 result 变量中
+#if 0
+    if (result.selectedCount > 0) {
+        for (UINT i = 0; i < result.selectedCount; ++i) {
+            // 使用路径：result.selectedPaths[i]
+
+            // 使用完毕后记得释放内存
+            free(result.selectedPaths[i]);
+        }
+        free(result.selectedPaths);
+    }
+#endif
+
+    // StrVec files;
+    win->homePageSelectedFiles.Reset();
+    GetFolderFilesFromGetOpenFileName(&ofn, win->homePageSelectedFiles);
+    // logf("Total Select: %d\n", len(win->homePageSelectedFiles));
+    // for (int o = 0; o < len(win->homePageSelectedFiles); ++o) {
+    //     logf("HomePageSelectedFiles:(i=%d) %s\n", o, (win->homePageSelectedFiles.At(o)));
+    // }
+    // GetFolderFilesFromGetOpenFileName(&ofn, files);
+    // ExpandFilesAndFolders(files, win->homePageSelectedFiles);
+    win->RedrawAll(true);
+
+    return true;
+}
+
+static void UploadFiles(MainWindow* win) {
+    if (!CanAccessDisk()) return;
+
+    // 上传完成，清理 UI 状态
+    // auto cleanup = new UploadProgressUIData{win, nullptr};
+    // auto cfn = MkFunc0(OnUploadFinishedUI, cleanup);
+    // uitask::Post(cfn, "UploadFinished");
+
+    if (!OpenFileForHomePageList(win)) return;
+
+    StrVec files;
+    ExpandAllWithOutFirst(win->homePageSelectedFiles, files);
+
+    // 2. 从配置读取服务器地址（gGlobalPrefs->remoteIp）
+    Str remoteIp = gSettings->remoteIp;
+    if (len(remoteIp) == 0) {
+        // 没有配置 RemoteIp，弹出提示
+        MessageBoxW(win->hwndFrame, L"请在高级设置中配置 RemoteIp 选项", L"上传失败", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    /*
+    if (gGlobalPrefs->localSend) {
+        auto* d = new UploadTaskData();
+        d->win = win;
+        d->filePaths = files; // StrVec 复制
+        d->port = 8880;       // 或从配置读取
+        d->urlA = nullptr;
+        d->serverA = str::Dup(remoteIp).s;
+        d->stopQueue = nullptr;
+
+        auto fn = MkFunc0(
+            +[](UploadTaskData* ctx) {
+                UploadProgressUIData cbCtx{ctx->win, nullptr};
+                auto cb = MkFunc1(OnUploadProgress, &cbCtx);
+
+                bool ok = LocalSender(ctx->serverA, ctx->filePaths, cb);
+                if (ok) {
+                    logf("LocalSend upload failed...");
+                }
+
+                free(ctx->serverA);
+                delete ctx;
+            },
+            d);
+
+        RunAsync(fn, "UploadFilesThread");
+    } else {
+        StrVec uFiles;
+        SliceFirst(files, uFiles);
+        // 3. 创建停止队列，保存到 win 以便取消
+        auto* stopQueue = new StrQueue();
+        win->uploadStopQueue = stopQueue;
+        // auto gProgress = new UploadProgress; // 独立堆分配
+
+        // 4. 启动上传任务
+        auto* d = new UploadTaskData();
+        d->win = win;
+        d->filePaths = uFiles; // StrVec 复制
+        d->serverA = str::Dup(remoteIp).s;
+        d->port = 8880; // 或从配置读取
+        d->urlA = str::Dup("/upload").s;
+        d->stopQueue = stopQueue;
+        // d->progress = gProgress;
+
+        // win->uploadProgress = nullptr; //初始为空，等第一次回调再设置
+
+        auto fn = MkFunc0(UploadTask, d);
+        RunAsync(fn, "UploadFilesThread");
+    }
+    */
+}
+
 static void MaybeShowNextFileScrollHint(MainWindow* win);
 
 // Take ownership of src's pages so a 50k-file result isn't copied on the UI thread.
@@ -11813,7 +12286,7 @@ static LRESULT FrameOnCommand(MainWindow* win, HWND hwnd, UINT msg, WPARAM wp, L
         // 如果没有 Home 标签页（noHomeTab=true 或被关闭），
         // 可以新建一个 About 类型的 WindowTab 并插入
         case CmdSendToRemote:
-            // UploadFiles(win);
+            UploadFiles(win);
             break;
 
         default:

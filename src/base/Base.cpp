@@ -6114,6 +6114,17 @@ bool operator!=(const StrVec::iterator& a, const StrVec::iterator& b) {
     return (a.v != b.v) || (a.idx != b.idx);
 };
 
+void SliceFirst(const StrVec& str, StrVec& result) {
+    if (len(result) != 0) {
+        return;
+    }
+
+    int n = len(str);
+    for (int i = 1; i < n; i++) {
+        result.Append(str.At(i));
+    }
+}
+
 static void SortNoData(StrVec* v, StrLessFunc lessFn) {
     CompactPages(v, 0);
     if (len(*v) < 2) {
