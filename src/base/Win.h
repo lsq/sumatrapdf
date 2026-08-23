@@ -1,5 +1,7 @@
 /* Copyright 2022 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
+#ifndef _WIN_UTIL_H
+#define _WIN_UTIL_H
 
 #if OS_WIN
 constexpr UINT DRAGQUERY_NUMFILES = 0xFFFFFFFF;
@@ -515,3 +517,4 @@ TempStr GetDefaultPrinterNameTemp();
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 #endif // OS_WIN
+#endif

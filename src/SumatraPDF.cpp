@@ -6,6 +6,7 @@
 #include "base/Pixmap.h"
 #include "base/WinDynCalls.h"
 #include "base/DirScan.h"
+#include "base/StrQueue.h"
 #include <dwmapi.h>
 #include <shellapi.h>
 #include <cmath>
@@ -6569,13 +6570,71 @@ bool OpenFileForHomePageList(MainWindow* win) {
     return true;
 }
 
+// 进度回调数据（在 uitask::Post 中传递）
+struct UploadProgressUIData {
+    MainWindow* win;
+    UploadProgress* progress;
+};
+
+struct UploadTaskData {
+    MainWindow* win;
+    StrVec filePaths;
+    char* serverA;
+    int port;
+    char* urlA;
+    StrQueue* stopQueue;
+    // UploadProgress* progress; // 指针，独立堆分配
+};
+
+static void OnUploadProgressUI(UploadProgressUIData* d) {
+    AutoDelete del(d);
+    if (!IsMainWindowValid(d->win)) return;
+    d->win->uploadProgress = d->progress;
+    InvalidateRect(d->win->hwndCanvas, nullptr, FALSE);
+}
+
+static void OnUploadProgress(UploadProgressUIData* ctx, UploadProgress* p) {
+    // 限流：每次回调都 Post（如需限流可加时间戳判断）
+    auto d = new UploadProgressUIData{ctx->win, p};
+    auto fn = MkFunc0(OnUploadProgressUI, d);
+    uitask::Post(fn, nullptr);
+}
+
+static void OnUploadFinishedUI(UploadProgressUIData* d) {
+    AutoDelete del(d);
+    if (!IsMainWindowValid(d->win)) return;
+    if (!d->win->uploadProgress) return;
+    delete (d->win->uploadProgress);
+    d->win->uploadProgress = nullptr;
+    d->win->RedrawAll(false);
+}
+
+static void UploadTask(UploadTaskData* d) {
+    AutoDelete del(d);
+
+    UploadProgressUIData cbCtx{d->win, nullptr};
+    auto cb = MkFunc1(OnUploadProgress, &cbCtx);
+    // OnUploadProgress(&cbCtx);
+
+    HttpPostFilesStreamPool(d->serverA, d->port, d->urlA, d->filePaths, 4, 64 * 1024, cb, d->stopQueue);
+
+    // 上传完成，清理 UI 状态
+    // auto cleanup = new UploadProgressUIData{d->win, nullptr};
+    // auto fn = MkFunc0(OnUploadFinishedUI, cleanup);
+    // uitask::Post(fn, "UploadFinished");
+
+    free(d->serverA);
+    free(d->urlA);
+    DestroyTempArena();
+}
+
 static void UploadFiles(MainWindow* win) {
     if (!CanAccessDisk()) return;
 
     // 上传完成，清理 UI 状态
-    // auto cleanup = new UploadProgressUIData{win, nullptr};
-    // auto cfn = MkFunc0(OnUploadFinishedUI, cleanup);
-    // uitask::Post(cfn, "UploadFinished");
+    auto cleanup = new UploadProgressUIData{win, nullptr};
+    auto cfn = MkFunc0(OnUploadFinishedUI, cleanup);
+    uitask::Post(cfn, "UploadFinished");
 
     if (!OpenFileForHomePageList(win)) return;
 
@@ -6590,8 +6649,7 @@ static void UploadFiles(MainWindow* win) {
         return;
     }
 
-    /*
-    if (gGlobalPrefs->localSend) {
+    if (gSettings->localSend) {
         auto* d = new UploadTaskData();
         d->win = win;
         d->filePaths = files; // StrVec 复制
@@ -6605,17 +6663,17 @@ static void UploadFiles(MainWindow* win) {
                 UploadProgressUIData cbCtx{ctx->win, nullptr};
                 auto cb = MkFunc1(OnUploadProgress, &cbCtx);
 
-                bool ok = LocalSender(ctx->serverA, ctx->filePaths, cb);
-                if (ok) {
-                    logf("LocalSend upload failed...");
-                }
+                // bool ok = LocalSender(ctx->serverA, ctx->filePaths, cb);
+                // if (ok) {
+                //     logf("LocalSend upload failed...");
+                // }
 
                 free(ctx->serverA);
                 delete ctx;
             },
             d);
 
-        RunAsync(fn, "UploadFilesThread");
+        RunAsync(fn, StrL("UploadFilesThread"));
     } else {
         StrVec uFiles;
         SliceFirst(files, uFiles);
@@ -6630,16 +6688,15 @@ static void UploadFiles(MainWindow* win) {
         d->filePaths = uFiles; // StrVec 复制
         d->serverA = str::Dup(remoteIp).s;
         d->port = 8880; // 或从配置读取
-        d->urlA = str::Dup("/upload").s;
+        d->urlA = str::Dup(StrL("/upload")).s;
         d->stopQueue = stopQueue;
         // d->progress = gProgress;
 
         // win->uploadProgress = nullptr; //初始为空，等第一次回调再设置
 
         auto fn = MkFunc0(UploadTask, d);
-        RunAsync(fn, "UploadFilesThread");
+        RunAsync(fn, StrL("UploadFilesThread"));
     }
-    */
 }
 
 static void MaybeShowNextFileScrollHint(MainWindow* win);

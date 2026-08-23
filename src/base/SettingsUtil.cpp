@@ -219,6 +219,7 @@ static bool IsCompactable(const StructInfo* info) {
         switch (info->fields[i].type) {
             case SettingType::Bool:
             case SettingType::Int:
+            case SettingType::Int64:
             case SettingType::Float:
             case SettingType::Color:
                 continue;
@@ -241,6 +242,9 @@ static bool SerializeField(str::Builder& out, const u8* base, const FieldInfo& f
             return true;
         case SettingType::Int:
             out.Append(fmt("%d", *(int*)fieldPtr));
+            return true;
+        case SettingType::Int64:
+            out.Append(fmt("%lld", *(i64*)fieldPtr));
             return true;
         case SettingType::Float:
             out.Append(fmt("%g", *(float*)fieldPtr));
@@ -335,6 +339,15 @@ static void deserializeField(const FieldInfo& field, u8* base, Str value) {
                 *intPtr = ParseInt(value);
             } else {
                 *intPtr = (int)field.value;
+            }
+        } break;
+
+        case SettingType::Int64: {
+            i64* i64Ptr = (i64*)fieldPtr;
+            if (!str::IsNull(value)) {
+                *i64Ptr = ParseInt64(value);
+            } else {
+                *i64Ptr = (i64)field.value;
             }
         } break;
 
@@ -637,6 +650,7 @@ static void FreeStructData(const StructInfo* info, u8* base) {
         switch (field.type) {
             case SettingType::Bool:
             case SettingType::Int:
+            case SettingType::Int64:
             case SettingType::Float:
             case SettingType::Comment:
                 // nothing to free
