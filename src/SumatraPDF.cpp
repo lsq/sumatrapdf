@@ -25,6 +25,7 @@
 #include "base/Timer.h"
 #include "base/LzmaSimpleArchive.h"
 #include "base/CmdLineArgs.h"
+#include "base/LocalSend.h"
 
 #include "gui/UIModels.h"
 #include "gui/Layout.h"
@@ -6609,93 +6610,74 @@ static void OnUploadFinishedUI(UploadProgressUIData* d) {
     d->win->RedrawAll(false);
 }
 
+static void PostUploadFinished(MainWindow* win, UploadProgress* progress) {
+    auto d = new UploadProgressUIData{win, progress};
+    uitask::Post(MkFunc0(OnUploadFinishedUI, d), "UploadFinished");
+}
+
 static void UploadTask(UploadTaskData* d) {
     AutoDelete del(d);
-
-    UploadProgressUIData cbCtx{d->win, nullptr};
-    auto cb = MkFunc1(OnUploadProgress, &cbCtx);
-    // OnUploadProgress(&cbCtx);
-
-    HttpPostFilesStreamPool(d->serverA, d->port, d->urlA, d->filePaths, 4, 64 * 1024, cb, d->stopQueue);
-
-    // 上传完成，清理 UI 状态
-    // auto cleanup = new UploadProgressUIData{d->win, nullptr};
-    // auto fn = MkFunc0(OnUploadFinishedUI, cleanup);
-    // uitask::Post(fn, "UploadFinished");
-
+    HttpPostFilesStreamPool(d->serverA, d->port, d->urlA, d->filePaths, 4, 64 * 1024, d->progress);
+    // 工作线程都已结束，progress 交给 UI 线程（显示最终结果或释放）
+    PostUploadFinished(d->win, d->progress);
     free(d->serverA);
     free(d->urlA);
     DestroyTempArena();
 }
 
+static void LocalSendTask(UploadTaskData* d) {
+    AutoDelete del(d);
+    int rc = LocalSender(Str(d->serverA), d->filePaths, d->progress);
+    if (rc != 0) {
+        logf("LocalSend upload failed or cancelled\n");
+    }
+    PostUploadFinished(d->win, d->progress);
+    free(d->serverA);
+    DestroyTempArena();
+}
+
 static void UploadFiles(MainWindow* win) {
     if (!CanAccessDisk()) return;
-
-    // 上传完成，清理 UI 状态
-    auto cleanup = new UploadProgressUIData{win, nullptr};
-    auto cfn = MkFunc0(OnUploadFinishedUI, cleanup);
-    uitask::Post(cfn, "UploadFinished");
+    if (win->uploadInFlight) {
+        MessageBoxW(win->hwndFrame, L"上一次上传还没有结束", L"上传", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
 
     if (!OpenFileForHomePageList(win)) return;
 
     StrVec files;
     ExpandAllWithOutFirst(win->homePageSelectedFiles, files);
 
-    // 2. 从配置读取服务器地址（gGlobalPrefs->remoteIp）
+    // 从配置读取服务器地址（gGlobalPrefs->remoteIp）
     Str remoteIp = gSettings->remoteIp;
     if (len(remoteIp) == 0) {
-        // 没有配置 RemoteIp，弹出提示
         MessageBoxW(win->hwndFrame, L"请在高级设置中配置 RemoteIp 选项", L"上传失败", MB_OK | MB_ICONWARNING);
         return;
     }
 
+    // 清掉上一次已完成、仍在显示的传输列表
+    HomeTransferDiscardFinished(win);
+
+    // progress 由这里分配；任务结束后由 OnUploadFinishedUI 接管
+    auto* progress = new UploadProgress();
+    progress->cbProgress = MkFunc1(OnUploadProgress, win);
+    win->uploadInFlight = progress;
+
+    auto* d = new UploadTaskData();
+    d->win = win;
+    d->serverA = str::Dup(remoteIp).s;
+    d->port = 8880; // 或从配置读取
+    d->progress = progress;
     if (gSettings->localSend) {
-        auto* d = new UploadTaskData();
-        d->win = win;
         d->filePaths = files; // StrVec 复制
-        d->port = 8880;       // 或从配置读取
         d->urlA = nullptr;
-        d->serverA = str::Dup(remoteIp).s;
-        d->stopQueue = nullptr;
-
-        auto fn = MkFunc0(
-            +[](UploadTaskData* ctx) {
-                UploadProgressUIData cbCtx{ctx->win, nullptr};
-                auto cb = MkFunc1(OnUploadProgress, &cbCtx);
-
-                // bool ok = LocalSender(ctx->serverA, ctx->filePaths, cb);
-                // if (ok) {
-                //     logf("LocalSend upload failed...");
-                // }
-
-                free(ctx->serverA);
-                delete ctx;
-            },
-            d);
-
-        RunAsync(fn, StrL("UploadFilesThread"));
+        RunAsync(MkFunc0(LocalSendTask, d), StrL("UploadFilesThread"));
     } else {
         StrVec uFiles;
         SliceFirst(files, uFiles);
-        // 3. 创建停止队列，保存到 win 以便取消
-        auto* stopQueue = new StrQueue();
-        win->uploadStopQueue = stopQueue;
-        // auto gProgress = new UploadProgress; // 独立堆分配
-
-        // 4. 启动上传任务
-        auto* d = new UploadTaskData();
-        d->win = win;
         d->filePaths = uFiles; // StrVec 复制
-        d->serverA = str::Dup(remoteIp).s;
-        d->port = 8880; // 或从配置读取
         d->urlA = str::Dup(StrL("/upload")).s;
-        d->stopQueue = stopQueue;
-        // d->progress = gProgress;
-
-        // win->uploadProgress = nullptr; //初始为空，等第一次回调再设置
-
-        auto fn = MkFunc0(UploadTask, d);
-        RunAsync(fn, StrL("UploadFilesThread"));
+        RunAsync(MkFunc0(UploadTask, d), StrL("UploadFilesThread"));
     }
 }
 

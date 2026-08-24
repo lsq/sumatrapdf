@@ -309,8 +309,8 @@ struct MainWindow { // NOLINT(clang-analyzer-optin.performance.Padding)
     StrVec homePageSelectedFiles; // files selected via "Open a document" in list view
     // 当前上传进度（nullptr 表示无上传任务），由 UI 线程读写
     UploadProgress* uploadProgress = nullptr;
-    // 上传取消队列（调用 uploadStopQueue->Stop() 取消上传）
-    StrQueue* uploadStopQueue = nullptr;
+    // 正在后台上传的任务（nullptr 表示没有），由 OnUploadFinishedUI 清空
+    UploadProgress* uploadInFlight = nullptr;
     // extra frame width added so showing the sidebar does not shrink the canvas
     int sidebarGrewFrameDx = 0;
 

@@ -9,7 +9,7 @@
 // must be last due to assert() over-write
 #include "base/tests/UtAssert.h"
 
-void TestDirIter() {
+void TestiDirIter() {
     Str st = StrL("E:\\temp\\报销");
     // Str st = ("E:\\temp\\t1");
     printf("path exists: %d\n", dir::Exists(st));
@@ -155,7 +155,7 @@ void FileUtilTest() {
     }
     {
         printf("Test TestDirIter\n--------------------\n");
-        TestDirIter();
+        TestiDirIter();
     }
     {
         // a UNC path is \\?\UNC\server\share when extended, not \\?\\\server\share

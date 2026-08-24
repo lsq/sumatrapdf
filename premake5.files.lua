@@ -379,6 +379,7 @@ function sumatrapdf_files()
     "KeyboardHelp.*",
     "KeyboardHelpCommon.*",
     "LinkFollow.*",
+    "LocalSend.*",
     "MainWindow.*",
     "MainWindowCommon.*",
     "Menu.*",
@@ -538,6 +539,19 @@ function darkmodelib_files()
 end
 
 function base_files()
+  files_in_dir("src/base/protocol", {
+    "Constants.h",
+    "Models.*",
+    "Fingerprint.*",
+  })
+  files_in_dir("src/base/net", {
+    "IHttpClient.h",
+    "HttpClient.*",
+  })
+  files_in_dir("src/base/client", {
+    "FileSource.*",
+    "UploadSession.*",
+  })
   files_in_dir("src/base", {
     "ApiHook.*",
     "AppendStore.*",
@@ -568,6 +582,7 @@ function base_files()
     "Http.h",
     "Http.cpp",
     "JsonParser.*",
+    "LocalSend.*",
     "Log.h",
     "LzmaSimpleArchive.*",
     "Pixmap.*",

@@ -1,5 +1,6 @@
 /* Copyright 2022 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
+#include "base/Win.h"
 
 #include "Win.h"
 struct StrQueue;
@@ -28,6 +29,7 @@ bool HttpPostUrl(Str url, Str contentType, Str extraHeaders, Str body, HttpRsp* 
 struct HttpUploadProgress {
     i64 nUploaded;
     i64 totalSize;
+    bool abort = false; // 回调里置 true：中止当前文件的上传
 };
 
 // -----------------------------------------------------------------------
@@ -137,7 +139,7 @@ struct BoundedByteQueue {
         }
     }
     // 生产者：阻塞直到有空位
-    bool Push(const char* data, DWORD len) {
+    bool Push(const ByteChunk data) {
         WaitForSingleObject(hNotFull, INFINITE);
         EnterCriticalSection(&cs);
         if (finished) {
@@ -145,11 +147,11 @@ struct BoundedByteQueue {
             ReleaseSemaphore(hNotFull, 1, nullptr);
             return false;
         }
-        ByteChunk c;
-        Str dupData = str::Dup(Str(data, len));
-        c.data = dupData.s;
-        c.len = len;
-        VecAppend(chunks,c);
+        // ByteChunk c ;
+        // Str dupData = str::Dup(Str(data, len));
+        // c.data = dupData.s;
+        // c.len = len;
+        VecAppend(chunks, data);
         LeaveCriticalSection(&cs);
         SetEvent(hNotEmpty);
         return true;
@@ -164,6 +166,15 @@ struct BoundedByteQueue {
         // logf("debug: MarkFinished called. hNotEmpty handle = %p\n", hNotEmpty);
         SetEvent(hNotEmpty);
         LeaveCriticalSection(&cs);
+    }
+
+    // 消费者提前退出（取消/出错）时调用：唤醒可能阻塞在 Push() 的生产者，让它退出
+    void Cancel() {
+        EnterCriticalSection(&cs);
+        finished = true;
+        LeaveCriticalSection(&cs);
+        ReleaseSemaphore(hNotFull, 1, nullptr);
+        SetEvent(hNotEmpty);
     }
 
     // 消费者：阻塞直到有数据，返回 false 表示结束
@@ -212,12 +223,14 @@ struct FileReaderData {
 
 // 单个文件的上传状态
 struct FileUploadState {
-    char* filePath = nullptr;       // 文件路径（不拥有，指向 StrVec 中的字符串）
+    char* filePath = nullptr;       // 文件路径（拥有，析构时释放）
     i64 totalBytes = 0;             // 文件总大小（-1 表示未知）
     AtomicInt64 uploadedBytes;      // 已上传字节数（原子，工作线程直接更新）
     volatile bool isActive = false; // 正在上传中
     volatile bool isDone = false;   // 已完成（成功或失败）
     volatile bool isFailed = false; // 是否失败
+
+    ~FileUploadState() { free(filePath); }
 };
 
 // 全局进度（扩展之前的 UploadProgress）
@@ -236,6 +249,12 @@ struct UploadProgress {
 
     // --- 进度回调（在 UI 线程或调用方线程中调用）---
     Func1<UploadProgress*> cbProgress;
+
+    // --- 取消 / 完成 ---
+    // cancelled: UI 线程点 ✕ 时置 true，工作线程据此停止上传
+    // finished:  OnUploadFinishedUI（UI 线程）置 true，此后后台线程不再访问本对象
+    volatile bool cancelled = false;
+    volatile bool finished = false;
 
     UploadProgress() = default;
     ~UploadProgress() {
@@ -271,8 +290,8 @@ bool HttpPostFileStream(const char* server, int port, const char* urlPath, const
 // 返回：失败的文件数（0 表示全部成功）
 int HttpPostFilesStreamPool(const char* serverA, int port, const char* urlA, const StrVec& filePaths,
                             int workerCount = 4, int chunkSize = 64 * 1024,
-                            // UploadProgress* progress = nullptr,
-                            const Func1<UploadProgress*>& cbProgress = {}, StrQueue* stopQueue = nullptr);
+                            // progress: 调用方分配并拥有（可为 nullptr），函数内填充 fileStates
+                            UploadProgress* progress = nullptr);
 
 TempStr HttpNormalizeHeadersTemp(Str headers);
 

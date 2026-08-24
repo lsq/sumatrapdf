@@ -453,9 +453,14 @@ void FileReaderThread(FileReaderData* td) {
         if (dwRead == 0) {
             break; // EOF
         }
-        if (!td->queue->Push(buf, (int)dwRead)) {
+        ByteChunk c;
+        c.data = buf;
+        c.len = (int)dwRead;
+        if (!td->queue->Push(c)) {
             break; // 队列已关闭
         }
+
+        buf = AllocArray<char>(td->chunkSize);
     }
 
     free(buf);
@@ -479,6 +484,7 @@ bool HttpPostFileStream(const char* serverA, int port, const char* urlPathA, con
     HINTERNET hInet = nullptr, hConn = nullptr, hReq = nullptr;
     DWORD respCode = 0, respCodeSize = sizeof(respCode);
     DWORD timeoutMs = 60 * 1000;
+    HANDLE hReader = nullptr;
 
     // 获取文件大小（用于 Content-Length 和进度计算）
     i64 fileSize = file::GetSize(Str(filePath));
@@ -493,7 +499,12 @@ bool HttpPostFileStream(const char* serverA, int port, const char* urlPathA, con
 
     auto td = new FileReaderData{&queue, str::Dup(Str(filePath)).s, chunkSize, &readerError};
     auto fn = MkFunc0(FileReaderThread, td);
-    RunAsync(fn, StrL("HttpPostFileStreamReader"));
+    hReader = StartThread(fn, StrL("HttpPostFileStreamReader"));
+    if (!hReader) {
+        free(td->filePath);
+        delete td;
+        return false;
+    }
 
     // 建立 HTTP 连接
     WCHAR* server = CWStrTemp(Str(serverA));
@@ -570,6 +581,10 @@ bool HttpPostFileStream(const char* serverA, int port, const char* urlPathA, con
             // logf("debug: send data length: %d\nTotal send: %d\n", dwWritten, tt);
             progress.nUploaded += (i64)dwWritten;
             cbProgress.Call(&progress);
+            if (progress.abort) {
+                logf("HttpPostFileStream: aborted\n");
+                goto Exit;
+            }
         }
     }
 
@@ -590,6 +605,10 @@ bool HttpPostFileStream(const char* serverA, int port, const char* urlPathA, con
     ok = (respCode >= 200 && respCode < 300);
 
 Exit:
+    // 提前退出时生产者可能阻塞在 Push()：先唤醒它并等它退出，queue 才能安全析构
+    queue.Cancel();
+    WaitForSingleObject(hReader, INFINITE);
+    SafeCloseHandle(&hReader);
     if (hReq) InternetCloseHandle(hReq);
     if (hConn) InternetCloseHandle(hConn);
     if (hInet) InternetCloseHandle(hInet);
@@ -607,6 +626,9 @@ struct UploadWorkerCtx {
 
 static void UploadWorkerThread(UploadWorkerCtx* ctx) {
     for (;;) {
+        if (ctx->progress->cancelled) {
+            break;
+        }
         Str path = ctx->queue->PopFront();
         if (len(path) == 0) {
             // Stop() 触发，立即退出
@@ -625,8 +647,8 @@ static void UploadWorkerThread(UploadWorkerCtx* ctx) {
                 break;
             }
         }
+        // path 指向 StrQueue 内部 StrVec 的存储，不能 free
         if (!fstate) {
-            str::Free(path);
             continue;
         }
 
@@ -647,6 +669,9 @@ static void UploadWorkerThread(UploadWorkerCtx* ctx) {
                     // 触发全局进度回调
                     gp->cbProgress.Call(gp);
                 }
+                if (gp->cancelled) {
+                    p->abort = true;
+                }
             },
             &cbArgs);
 
@@ -661,14 +686,12 @@ static void UploadWorkerThread(UploadWorkerCtx* ctx) {
 
         // 完成后再触发一次回调，通知文件级状态变化
         ctx->progress->cbProgress.Call(ctx->progress);
-
-        str::Free(path);
     }
     DestroyTempArena();
 }
 
 int HttpPostFilesStreamPool(const char* serverA, int port, const char* urlA, const StrVec& filePaths, int workerCount,
-                            int chunkSize, const Func1<UploadProgress*>& cbProgress, StrQueue* stopQueue) {
+                            int chunkSize, UploadProgress* progressIn) {
     int n = len(filePaths);
     if (n == 0) {
         return 0;
@@ -679,18 +702,18 @@ int HttpPostFilesStreamPool(const char* serverA, int port, const char* urlA, con
     }
 
     StrQueue localQueue;
-    StrQueue* queue = stopQueue ? stopQueue : &localQueue;
-    UploadProgress* progress = new UploadProgress;
+    StrQueue* queue = &localQueue;
+    UploadProgress localProgress;
+    UploadProgress* progress = progressIn ? progressIn : &localProgress;
     progress->nTotal = n;
     progress->totalBytes = 0;
-    progress->cbProgress = cbProgress;
     // 预分配每个文件的状态，并统计总字节数
     // progress.files.Reverse();
     for (int i = 0; i < n; i++) {
         // FileUploadState& fs = *progress.fileStates.AppendBlanks(1);
         // FileUploadState* fs = progress->fileStates.AppendBlanks(1);
         auto* fs = new FileUploadState();
-        fs->filePath = filePaths.At(i).s;
+        fs->filePath = str::Dup(filePaths.At(i)).s;
         fs->totalBytes = file::GetSize(Str(fs->filePath));
         if (fs->totalBytes > 0) {
             progress->totalBytes += fs->totalBytes;

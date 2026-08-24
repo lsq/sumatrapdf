@@ -437,7 +437,7 @@ again:
         return path;
     }
     path = queue.PopFront();
-    if (StrQueue::IsSentinel(path)) {
+    if (queue.IsSentinel(path)) {
         return {};
     }
     if (!IsStressTestSupportedFile(path, fileFilter)) {

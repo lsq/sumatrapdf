@@ -1,5 +1,7 @@
 /* Copyright 2022 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
+#ifndef _BASEUTIL_H
+#define _BASEUTIL_H
 
 /* OS_DARWIN - Any Darwin-based OS, including Mac OS X and iPhone OS */
 #ifdef __APPLE__
@@ -2831,4 +2833,5 @@ void logf(const char* s, const TArgs&... args) {
 #ifdef lstrcmpiW
 #undef lstrcmpiW
 #define lstrcmpiW dont_use_lstrcmpiW
+#endif
 #endif

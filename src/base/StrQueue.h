@@ -10,7 +10,7 @@ struct StrQueue {
     void Unlock();
     Str append(Str s);
     Str PopFront();
-    static bool IsSentinel(Str s);
+    bool IsSentinel(Str s);
     void MarkFinished();
     bool IsFinished();
     bool Access(const Func1<StrQueue*>& fn);
