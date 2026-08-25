@@ -167,6 +167,82 @@ void GfxGdiplus::FillRoundedRect(const Rect& r, int radius, Color fill, Color bo
     }
 }
 
+void GfxGdiplus::FillRoundedRectGradient(const Rect& r, int radius, Color colStart, Color colEnd, bool horizontal) {
+    if (r.IsEmpty()) {
+        return;
+    }
+    if (radius <= 0) {
+        // no rounding: a plain axis-aligned gradient fill is enough
+        Gdiplus::PointF p0(horizontal ? (float)r.x : (float)r.x, horizontal ? (float)r.y : (float)r.y);
+        Gdiplus::PointF p1(horizontal ? (float)(r.x + r.dx) : (float)r.x,
+                           horizontal ? (float)r.y : (float)(r.y + r.dy));
+        Gdiplus::LinearGradientBrush br(p0, p1, ToGdipColor(colStart), ToGdipColor(colEnd));
+        gfx->SetSmoothingMode(Gdiplus::SmoothingModeNone);
+        gfx->FillRectangle(&br, ToGdipRect(r));
+        return;
+    }
+    gfx->SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    GraphicsPath path;
+    AddRoundedRectPath(path, r, radius);
+    // same path FillRoundedRect() uses for its border, so the fill's edge and
+    // the border line up exactly and there is no gap at the rounded corners
+    Gdiplus::PointF p0(horizontal ? (float)r.x : (float)r.x, horizontal ? (float)r.y : (float)r.y);
+    Gdiplus::PointF p1(horizontal ? (float)(r.x + r.dx) : (float)r.x, horizontal ? (float)r.y : (float)(r.y + r.dy));
+    Gdiplus::LinearGradientBrush br(p0, p1, ToGdipColor(colStart), ToGdipColor(colEnd));
+    gfx->FillPath(&br, &path);
+}
+
+// 复用已有的 AddRoundedRectPath（同一份四角圆弧路径，保证裁剪边界与
+// FillRoundedRect 画背景/边框时的路径完全一致，角部不会有缝隙）
+// static void AddRoundedRectPath(GraphicsPath& path, const Rect& rc, int d); // 已存在
+
+void GfxGdiplus::FillRectGradient(const Rect& r, Color colStart, Color colEnd, bool horizontal) {
+    if (r.IsEmpty()) {
+        return;
+    }
+    Gdiplus::PointF p0, p1;
+    if (horizontal) {
+        p0 = Gdiplus::PointF((float)r.x, (float)r.y);
+        p1 = Gdiplus::PointF((float)(r.x + r.dx), (float)r.y);
+    } else {
+        p0 = Gdiplus::PointF((float)r.x, (float)r.y);
+        p1 = Gdiplus::PointF((float)r.x, (float)(r.y + r.dy));
+    }
+    Gdiplus::LinearGradientBrush br(p0, p1, ToGdipColor(colStart), ToGdipColor(colEnd));
+    Gdiplus::SmoothingMode prev = gfx->GetSmoothingMode();
+    gfx->SetSmoothingMode(Gdiplus::SmoothingModeNone); // plain rect: no AA needed on straight edges
+    gfx->FillRectangle(&br, ToGdipRect(r));
+    gfx->SetSmoothingMode(prev);
+}
+
+// void GfxGdiplus::PushClip(const Rect& r) {
+//     Gdiplus::GraphicsState st = gfx->Save();
+//     savedStates.Append(st);
+//     gfx->SetClip(ToGdipRect(r), Gdiplus::CombineModeIntersect);
+// }
+
+void GfxGdiplus::PushClipRounded(const Rect& r, int radius) {
+    Gdiplus::GraphicsState st = gfx->Save();
+    VecAppend(savedStates, st);
+    if (radius <= 0) {
+        gfx->SetClip(ToGdipRect(r), Gdiplus::CombineModeIntersect);
+        return;
+    }
+    Gdiplus::GraphicsPath path;
+    AddRoundedRectPath(path, r, radius);
+    // anti-alias the *edge* of subsequent fills where they meet this clip
+    // boundary (the corners); a hard clip alone leaves jagged rounded edges
+    gfx->SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    gfx->SetClip(&path, Gdiplus::CombineModeIntersect);
+}
+
+// void GfxGdiplus::PopClip() {
+//     ReportIf(len(savedStates) == 0);
+//     Gdiplus::GraphicsState st = savedStates.Last();
+//     savedStates.RemoveLast();
+//     gfx->Restore(st);
+// }
+
 void GfxGdiplus::FillEllipse(const Rect& r, Color col, u8 alpha) {
     if (ColorSkipsPaint(col) || r.IsEmpty()) {
         return;

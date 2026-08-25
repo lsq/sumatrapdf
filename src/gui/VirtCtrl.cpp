@@ -421,6 +421,8 @@ bool VirtCtrl::OnSetCursor(Point ptLocal) {
 }
 
 TempStr VirtCtrl::GetTooltipTemp(Point ptLocal) {
+    // logf("GetTooltipTemp: this=%p onGetTooltipValid=%d hasTooltipStr=%d\n", this, onGetTooltip.IsValid(),
+    // str::IsNull(tooltip));
     if (onGetTooltip.IsValid()) {
         VirtTooltipEvent ev;
         ev.w = this;

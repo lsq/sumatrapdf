@@ -186,12 +186,14 @@ LRESULT WndProcCanvasAbout(MainWindow* win, HWND hwnd, UINT msg, WPARAM wp, LPAR
 
         case WM_VSCROLL:
             HomePageClearActiveEntry(win);
+            if (HomeTransferVscroll(win, wp)) return 0;
             HomePageOnVScroll(win, wp);
             return 0;
 
         case WM_MOUSEWHEEL: {
             HomePageClearActiveEntry(win);
             int delta = GET_WHEEL_DELTA_WPARAM(wp);
+            if (HomeTransferOnMouseWheel(win, delta)) return 0;
             HomePageOnMouseWheel(win, delta);
             return 0;
         }

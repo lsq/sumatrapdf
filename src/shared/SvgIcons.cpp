@@ -25,6 +25,54 @@ const char* gIconFileOpen =
   <path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2" />
 </svg>)";
 
+const char* gIconDone =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff8040" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-checkbox">
+	<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+	<path d="M20 12v6a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h9" />
+	<path d="M9 11l3 3l8 -8" />
+</svg>)";
+
+const char* gIconFailed =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff0000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+	<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+	<path d="M18 6l-12 12" />
+	<path d="M6 6l12 12" />
+</svg>)";
+
+const char* gIconCloudUpload =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+	<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+	<path d="M7 18a4.6 4.4 0 0 1 0 -9a5 4.5 0 0 1 11 2h1a3.5 3.5 0 0 1 0 7h-1" />
+	<path d="M9 15l3 -3l3 3" />
+	<path d="M12 12l0 9" />
+</svg>)";
+
+const char* gIconUpload =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+	<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+	<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2" />
+	<path d="M7 9l5 -5l5 5" />
+	<path d="M12 4l0 12" />
+</svg>)";
+
+const char* gIconHourGlass =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100" fill="none" stroke="#ff8040" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-checkbox">
+  <!-- 玻璃瓶身黑色线条轮廓 -->
+  <path d="M 32 28 C 32 40, 42 46, 47 50 C 42 54, 32 60, 32 72 L 68 72 C 68 60, 58 54, 53 50 C 58 46, 68 40, 68 28 Z" fill="none" stroke="#111111" stroke-width="3.5" stroke-linejoin="round" />
+  <!-- 顶部红色盖子 -->
+  <rect x="27" y="20" width="46" height="8" rx="2" fill="#E62E1B" stroke="#111111" stroke-width="3" />
+  <!-- 底部红色盖子 -->
+  <rect x="27" y="72" width="46" height="8" rx="2" fill="#E62E1B" stroke="#111111" stroke-width="3" />
+  <!-- 玻璃瓶身背景色 (下半部分留白区域) -->
+  <path d="M 32 28 C 32 40, 42 46, 47 50 C 42 54, 32 60, 32 72 L 68 72 C 68 60, 58 54, 53 50 C 58 46, 68 40, 68 28 Z" fill="#F4F7F9" />
+  <!-- 上半部分沙子填充 -->
+  <path d="M 32 28 C 32 40, 42 46, 47 50 L 53 50 C 58 46, 68 40, 68 28 Z" fill="#FFCC00" />
+  <!-- 修改后的下半部分沙堆：明显缩小了宽度和高度，增加留白 -->
+  <path d="M 40 72 C 43 67, 46 65, 50 65 C 54 65, 57 67, 60 72 Z" fill="#FFCC00" />
+  <!-- 中间掉落的沙流 -->
+  <rect x="48.5" y="50" width="3" height="15" fill="#FFCC00" />
+</svg>)";
+
 // https://github.com/tabler/tabler-icons/blob/main/icons/outline/printer.svg
 const char* gIconPrint =
     R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">

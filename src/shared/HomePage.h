@@ -11,8 +11,31 @@ struct El;
 struct MainWindow;
 struct Gfx;
 enum class ScrollMsg;
+struct UploadProgress;
+struct StrQueue;
 
 // the About box (CmdHelpAbout); orig opens a window of its own
+// 进度回调数据（在 uitask::Post 中传递）
+struct UploadProgressUIData {
+    MainWindow* win;
+    UploadProgress* progress;
+};
+
+struct UploadTaskData {
+    MainWindow* win;
+    StrVec filePaths;
+    char* serverA;
+    int port;
+    char* urlA;
+    StrQueue* stopQueue;
+    // UploadProgress* progress; // 指针，独立堆分配
+};
+
+void OnUploadProgress(UploadProgressUIData* ctx, UploadProgress* p);
+void OnUploadFinishedUI(UploadProgressUIData* d);
+bool HomeTransferOnMouseWheel(MainWindow* win, int delta);
+bool HomeTransferVscroll(MainWindow* win, WPARAM wp);
+
 void ShowAboutWindow(MainWindow*);
 void CloseAboutWindow();
 bool IsAboutWindowVisible();

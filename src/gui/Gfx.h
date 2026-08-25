@@ -18,6 +18,7 @@
 // windows.h #defines DrawText to DrawTextW / DrawTextA and we want it as a
 // method name. No file that includes us calls the win32 DrawText directly;
 // use HdcDrawText() instead.
+#include <d2d1.h>
 #ifdef DrawText
 #undef DrawText
 #endif
@@ -85,6 +86,19 @@ struct Gfx {
     virtual void DrawDashedRect(const Rect&, Color) = 0;
     // anti-aliased; transparent / unset skip fill / border
     virtual void FillRoundedRect(const Rect&, int radius, Color fill, Color border = kColorTransparent) = 0;
+    // like FillRoundedRect but fills with a linear gradient between colStart/colEnd
+    // instead of a solid color; horizontal = left-to-right, else top-to-bottom
+    virtual void FillRoundedRectGradient(const Rect&, int radius, Color colStart, Color colEnd,
+                                         bool horizontal = true) = 0;
+    // plain-rect linear gradient fill (no rounding of its own — pair with
+    // PushClipRounded() below to get rounded corners only where the fill
+    // rect's edges actually reach the rounded clip boundary)
+    virtual void FillRectGradient(const Rect&, Color colStart, Color colEnd, bool horizontal = true) = 0;
+
+    // clips to the intersection of the rect and the current clip; nests
+    // like PushClip but the clip region is a rounded rect (same corner
+    // geometry as FillRoundedRect's `radius`); must be paired with PopClip()
+    virtual void PushClipRounded(const Rect&, int radius) = 0;
     virtual void FillEllipse(const Rect&, Color, u8 alpha = 255) = 0;
     virtual void DrawLine(const Rect&, Color, int thickness = 1) = 0;
     // anti-aliased line between two points, for diagonals
@@ -128,6 +142,10 @@ struct GfxHdc : Gfx {
     void DrawRect(const Rect&, Color, int thickness = 1) override;
     void DrawDashedRect(const Rect&, Color) override;
     void FillRoundedRect(const Rect&, int radius, Color fill, Color border = kColorTransparent) override;
+    void FillRoundedRectGradient(const Rect&, int radius, Color colStart, Color colEnd,
+                                 bool horizontal = true) override;
+    void FillRectGradient(const Rect&, Color colStart, Color colEnd, bool horizontal = true) override;
+    void PushClipRounded(const Rect&, int radius) override;
     void FillEllipse(const Rect&, Color, u8 alpha = 255) override;
     void DrawLine(const Rect&, Color, int thickness = 1) override;
     void DrawLineAA(Point, Point, Color, float thickness = 1.0f, u8 alpha = 255) override;
@@ -163,6 +181,10 @@ struct GfxGdiplus : Gfx {
     void DrawRect(const Rect&, Color, int thickness = 1) override;
     void DrawDashedRect(const Rect&, Color) override;
     void FillRoundedRect(const Rect&, int radius, Color fill, Color border = kColorTransparent) override;
+    void FillRoundedRectGradient(const Rect&, int radius, Color colStart, Color colEnd,
+                                 bool horizontal = true) override;
+    void FillRectGradient(const Rect&, Color colStart, Color colEnd, bool horizontal = true) override;
+    void PushClipRounded(const Rect&, int radius) override;
     void FillEllipse(const Rect&, Color, u8 alpha = 255) override;
     void DrawLine(const Rect&, Color, int thickness = 1) override;
     void DrawLineAA(Point, Point, Color, float thickness = 1.0f, u8 alpha = 255) override;
@@ -196,6 +218,7 @@ struct GfxDirect2D : Gfx {
     // d2d has no "current text color", so kColorUnset resolves to this
     Color textColor = 0;
     Vec<u8> clipDepth; // one per PushClip()
+    Vec<ID2D1Layer*> roundedLayers;
 
     GfxDirect2D() = default;
     explicit GfxDirect2D(HDC);
@@ -207,6 +230,10 @@ struct GfxDirect2D : Gfx {
     void DrawRect(const Rect&, Color, int thickness = 1) override;
     void DrawDashedRect(const Rect&, Color) override;
     void FillRoundedRect(const Rect&, int radius, Color fill, Color border = kColorTransparent) override;
+    void FillRoundedRectGradient(const Rect&, int radius, Color colStart, Color colEnd,
+                                 bool horizontal = true) override;
+    void FillRectGradient(const Rect&, Color colStart, Color colEnd, bool horizontal = true) override;
+    void PushClipRounded(const Rect&, int radius) override;
     void FillEllipse(const Rect&, Color, u8 alpha = 255) override;
     void DrawLine(const Rect&, Color, int thickness = 1) override;
     void DrawLineAA(Point, Point, Color, float thickness = 1.0f, u8 alpha = 255) override;

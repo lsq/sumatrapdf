@@ -184,6 +184,74 @@ void GfxHdc::FillRoundedRect(const Rect& r, int radius, Color fill, Color border
     }
 }
 
+void GfxHdc::FillRoundedRectGradient(const Rect& r, int radius, Color colStart, Color colEnd, bool horizontal) {
+    if (r.IsEmpty()) {
+        return;
+    }
+    GdiplusOnHdc gp(hdc);
+    Gdiplus::PointF p0(horizontal ? (float)r.x : (float)r.x, horizontal ? (float)r.y : (float)r.y);
+    Gdiplus::PointF p1(horizontal ? (float)(r.x + r.dx) : (float)r.x, horizontal ? (float)r.y : (float)(r.y + r.dy));
+    Gdiplus::LinearGradientBrush br(p0, p1, GdiRgbFromColor(colStart), GdiRgbFromColor(colEnd));
+    if (radius <= 0) {
+        gp.g.SetSmoothingMode(Gdiplus::SmoothingModeNone);
+        gp.g.FillRectangle(&br, r.x, r.y, r.dx, r.dy);
+        return;
+    }
+    Gdiplus::GraphicsPath path;
+    AddRoundedRectPath(path, r, radius);
+    gp.g.FillPath(&br, &path);
+}
+
+// AddRoundedRectPath is defined the same way as in GfxGdiplus_win.cpp
+// (or shared via a common header) — reused here just for FillRoundedRect
+
+void GfxHdc::FillRectGradient(const Rect& r, Color colStart, Color colEnd, bool horizontal) {
+    if (r.IsEmpty()) {
+        return;
+    }
+    GdiplusOnHdc gp(hdc); // clip set via SelectClipRgn on hdc is honored by this wrapper
+    Gdiplus::PointF p0, p1;
+    if (horizontal) {
+        p0 = Gdiplus::PointF((float)r.x, (float)r.y);
+        p1 = Gdiplus::PointF((float)(r.x + r.dx), (float)r.y);
+    } else {
+        p0 = Gdiplus::PointF((float)r.x, (float)r.y);
+        p1 = Gdiplus::PointF((float)r.x, (float)(r.y + r.dy));
+    }
+    Gdiplus::LinearGradientBrush br(p0, p1, GdiRgbFromColor(colStart), GdiRgbFromColor(colEnd));
+    gp.g.SetSmoothingMode(Gdiplus::SmoothingModeNone);
+    gp.g.FillRectangle(&br, ToGdipRect(r));
+}
+
+// void GfxHdc::PushClip(const Rect& r) {
+//     int saved = SaveDC(hdc);
+//     savedDCs.Append(saved);
+//     RECT rc = ToRECT(r);
+//     IntersectClipRect(hdc, rc.left, rc.top, rc.right, rc.bottom);
+// }
+
+void GfxHdc::PushClipRounded(const Rect& r, int radius) {
+    int saved = SaveDC(hdc);
+    VecAppend(savedDCs, saved);
+    if (radius <= 0) {
+        RECT rc = ToRECT(r);
+        IntersectClipRect(hdc, rc.left, rc.top, rc.right, rc.bottom);
+        return;
+    }
+    // CreateRoundRectRgn's corner ellipse is (w,h); our `radius` is already
+    // a diameter (see AddRoundedRectPath's comment), so pass it straight through
+    HRGN rgn = CreateRoundRectRgn(r.x, r.y, r.x + r.dx + 1, r.y + r.dy + 1, radius, radius);
+    ExtSelectClipRgn(hdc, rgn, RGN_AND);
+    DeleteObject(rgn); // the DC keeps its own copy; safe to delete right away
+}
+
+// void GfxHdc::PopClip() {
+//     ReportIf(len(savedDCs) == 0);
+//     int saved = savedDCs.Last();
+//     savedDCs.RemoveLast();
+//     RestoreDC(hdc, saved);
+// }
+
 void GfxHdc::FillEllipse(const Rect& r, Color col, u8 alpha) {
     if (ColorSkipsPaint(col) || r.IsEmpty()) {
         return;

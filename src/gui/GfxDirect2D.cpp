@@ -45,6 +45,8 @@ typedef HRESULT(WINAPI* Sig_DWriteCreateFactory)(DWRITE_FACTORY_TYPE, REFIID, IU
 static bool gTriedInit = false;
 static ID2D1Factory* gD2DFactory = nullptr;
 static IDWriteFactory* gDWriteFactory = nullptr;
+// void GfxDirect2D::FillRoundedRectGradient(const Rect&, int, Color, Color, bool) {}
+
 
 static void InitDirect2D() {
     if (gTriedInit) {
@@ -622,6 +624,124 @@ void GfxDirect2D::FillRoundedRect(const Rect& r, int radius, Color fill, Color b
     }
 }
 
+void GfxDirect2D::FillRoundedRectGradient(const Rect& r, int radius, Color colStart, Color colEnd, bool horizontal) {
+    if (!target || r.IsEmpty()) {
+        return;
+    }
+    D2D1_GRADIENT_STOP stops[2] = {};
+    auto toD2DColor = [](Color c) {
+        return D2D1::ColorF(GetRValue(c) / 255.0f, GetGValue(c) / 255.0f, GetBValue(c) / 255.0f, 1.0f);
+    };
+    stops[0] = {0.0f, toD2DColor(colStart)};
+    stops[1] = {1.0f, toD2DColor(colEnd)};
+
+    ID2D1GradientStopCollection* stopCollection = nullptr;
+    HRESULT hr = target->CreateGradientStopCollection(stops, 2, &stopCollection);
+    if (FAILED(hr) || !stopCollection) {
+        return;
+    }
+
+    D2D1_POINT_2F p0 = D2D1::Point2F((float)r.x, (float)r.y);
+    D2D1_POINT_2F p1 =
+        horizontal ? D2D1::Point2F((float)(r.x + r.dx), (float)r.y) : D2D1::Point2F((float)r.x, (float)(r.y + r.dy));
+
+    ID2D1LinearGradientBrush* gradBrush = nullptr;
+    hr = target->CreateLinearGradientBrush(D2D1::LinearGradientBrushProperties(p0, p1), stopCollection, &gradBrush);
+    stopCollection->Release();
+    if (FAILED(hr) || !gradBrush) {
+        return;
+    }
+
+    target->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    if (radius <= 0) {
+        target->FillRectangle(ToD2DRect(r), gradBrush);
+    } else {
+        // same radius conversion FillRoundedRect() uses: callers pass a
+        // corner-circle diameter, d2d wants the radius
+        float rad = (float)radius / 2.0f;
+        target->FillRoundedRectangle(D2D1::RoundedRect(ToD2DRect(r), rad, rad), gradBrush);
+    }
+    gradBrush->Release();
+}
+
+void GfxDirect2D::FillRectGradient(const Rect& r, Color colStart, Color colEnd, bool horizontal) {
+    if (!target || r.IsEmpty()) {
+        return;
+    }
+    ID2D1GradientStopCollection* stops = nullptr;
+    D2D1_GRADIENT_STOP gs[2] = {
+        {0.0f, ToD2DColor(colStart)},
+        {1.0f, ToD2DColor(colEnd)},
+    };
+    HRESULT hr = target->CreateGradientStopCollection(gs, 2, &stops);
+    if (FAILED(hr) || !stops) {
+        return;
+    }
+    D2D1_POINT_2F p0, p1;
+    if (horizontal) {
+        p0 = D2D1::Point2F((float)r.x, (float)r.y);
+        p1 = D2D1::Point2F((float)(r.x + r.dx), (float)r.y);
+    } else {
+        p0 = D2D1::Point2F((float)r.x, (float)r.y);
+        p1 = D2D1::Point2F((float)r.x, (float)(r.y + r.dy));
+    }
+    ID2D1LinearGradientBrush* br = nullptr;
+    hr = target->CreateLinearGradientBrush(D2D1::LinearGradientBrushProperties(p0, p1), stops, &br);
+    if (SUCCEEDED(hr) && br) {
+        target->FillRectangle(ToD2DRect(r), br);
+        br->Release();
+    }
+    stops->Release();
+}
+
+void GfxDirect2D::PushClip(const Rect& r) {
+    if (!target) {
+        return;
+    }
+    // d2d intersects with what is already pushed, and pops in order
+    target->PushAxisAlignedClip(ToD2DRect(r), D2D1_ANTIALIAS_MODE_ALIASED);
+    VecAppend(clipDepth, 0); // 0 = axis-aligned clip
+}
+
+void GfxDirect2D::PushClipRounded(const Rect& r, int radius) {
+    if (!target) {
+        return;
+    }
+    float rad = (float)radius / 2.0f;
+    ID2D1RoundedRectangleGeometry* geo = nullptr;
+    HRESULT hr = gD2DFactory->CreateRoundedRectangleGeometry(D2D1::RoundedRect(ToD2DRect(r), rad, rad), &geo);
+    if (FAILED(hr) || !geo) {
+        // fall back to a plain axis-aligned clip rather than corrupt the stack
+        target->PushAxisAlignedClip(ToD2DRect(r), D2D1_ANTIALIAS_MODE_ALIASED);
+        VecAppend(clipDepth, 0);
+        return;
+    }
+    ID2D1Layer* layer = nullptr;
+    target->CreateLayer(nullptr, &layer);
+    target->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), geo), layer);
+    geo->Release();
+    VecAppend(roundedLayers, layer);
+    VecAppend(clipDepth, 1); // 1 = rounded layer clip
+}
+
+void GfxDirect2D::PopClip() {
+    if (!target) {
+        return;
+    }
+    if (len(clipDepth) == 0) {
+        ReportIf(true);
+        return;
+    }
+    u8 kind = VecPop(clipDepth);
+    if (kind == 1) {
+        target->PopLayer();
+        ID2D1Layer* layer = VecPop(roundedLayers);
+        layer->Release();
+    } else {
+        target->PopAxisAlignedClip();
+    }
+}
+
 void GfxDirect2D::FillEllipse(const Rect& r, Color col, u8 alpha) {
     if (!target || ColorSkipsPaint(col) || r.IsEmpty()) {
         return;
@@ -874,26 +994,26 @@ void GfxDirect2D::DrawPixmap(Pixmap* px, const Rect& r) {
     bmp->Release();
 }
 
-void GfxDirect2D::PushClip(const Rect& r) {
-    if (!target) {
-        return;
-    }
-    // d2d intersects with what is already pushed, and pops in order
-    target->PushAxisAlignedClip(ToD2DRect(r), D2D1_ANTIALIAS_MODE_ALIASED);
-    VecAppend(clipDepth, 1);
-}
-
-void GfxDirect2D::PopClip() {
-    if (!target) {
-        return;
-    }
-    if (len(clipDepth) == 0) {
-        ReportIf(true);
-        return;
-    }
-    VecPop(clipDepth);
-    target->PopAxisAlignedClip();
-}
+// void GfxDirect2D::PushClip(const Rect& r) {
+//     if (!target) {
+//         return;
+//     }
+//     // d2d intersects with what is already pushed, and pops in order
+//     target->PushAxisAlignedClip(ToD2DRect(r), D2D1_ANTIALIAS_MODE_ALIASED);
+//     VecAppend(clipDepth, 1);
+// }
+//
+// void GfxDirect2D::PopClip() {
+//     if (!target) {
+//         return;
+//     }
+//     if (len(clipDepth) == 0) {
+//         ReportIf(true);
+//         return;
+//     }
+//     VecPop(clipDepth);
+//     target->PopAxisAlignedClip();
+// }
 
 // d2d doesn't pick up the window's orientation from the device context, so a
 // d2d surface is never mirrored and there is nothing to turn off

@@ -3,10 +3,13 @@
 
 #include "base/Base.h"
 #include "base/AutoWin.h"
+// #include "base/ScopedWin.h"
+#include "base/Http.h"
 #include "base/File.h"
 #include "base/Pixmap.h"
 #include "base/Win.h"
 #include "gui/Dpi.h"
+#include "base/UITask.h"
 
 #include "gui/UIModels.h"
 #include "gui/Layout.h"
@@ -101,6 +104,10 @@ Try [Sumatra File Manager Online](https://online.sumatrafilemanager.com): file m
 )promos");
 
 static Str promoFromServer;
+static AtomicBool gTransferRepaintPending = 0;
+#define kHomeTransferListRowDy DpiScale(20)
+constexpr int kThumbnailDx = 120;
+constexpr int kThumbnailDy = 170;
 
 static void EnsureTipsParsed() {
     if (gTipsParsed) {
@@ -268,6 +275,8 @@ constexpr Color kCol2 = MkRgb(227, 107, 35);
 constexpr Color kCol3 = MkRgb(93, 160, 40);
 constexpr Color kCol4 = MkRgb(69, 132, 190);
 constexpr Color kCol5 = MkRgb(112, 115, 207);
+constexpr Color kColStart = MkRgb(0x3b, 0x82, 0xf6);
+constexpr Color kColEnd = MkRgb(0x34, 0xd3, 0x99);
 
 static Kind kindSumatraLogo = "sumatraLogo";
 
@@ -1074,6 +1083,11 @@ struct HomeSearchBorderCtrl : VirtCtrl {
 };
 
 static Kind kindHomeChromeCtrl = "homeChromeCtrl";
+// 和 kindHomeChromeCtrl 定义在一起的地方（HomePage.cpp 顶部 kind 常量区）
+static Kind kindHomeTransferListCtrl = "homeTransferListCtrl" /* 选一个未被占用的数值，比如已有最大值+1 */;
+static Kind kindHomeTransferRowCtrl = "homeTransferRowCtrl" /* 再+1 */;
+
+struct HomeTransferListCtrl;
 
 struct HomeChromeCtrl : VirtCtrl {
     HomeTipCtrl* tip = nullptr;
@@ -1084,6 +1098,7 @@ struct HomeChromeCtrl : VirtCtrl {
     SumatraLogo* logo = nullptr;
     HomeViewIconCtrl* thumbView = nullptr;
     HomeViewIconCtrl* listView = nullptr;
+    HomeTransferListCtrl* transferList = nullptr; // 新增
     HomeOpenDocCtrl* openDoc = nullptr;
     // chrome-less About dropdown under the logo; shown after the tooltip delay
     VirtHost* aboutHover = nullptr;
@@ -1122,6 +1137,633 @@ static PlatformFont* HomePageFont(int size) {
 
 static void HomeSelectFromSearchReturnCol(MainWindow* win);
 static void HomePageShowSelectionTooltip(MainWindow* win);
+
+// 在 HomeTransferRowCtrl::Paint 里，替换掉原来单色的 gfx->FillRect(rcBarFg, ...)
+static Color LerpColor(Color c0, Color c1, float t) {
+    t = std::clamp(t, 0.0f, 1.0f);
+    u8 r = (u8)(GetRValue(c0) + (GetRValue(c1) - GetRValue(c0)) * t);
+    u8 g = (u8)(GetGValue(c0) + (GetGValue(c1) - GetGValue(c0)) * t);
+    u8 b = (u8)(GetBValue(c0) + (GetBValue(c1) - GetBValue(c0)) * t);
+    return MkRgb(r, g, b);
+}
+
+void DrawGradientBar(Gfx* gfx, Rect rcFg, int rcBgDx, Color colStart, Color colEnd) {
+    if (rcFg.IsEmpty()) return;
+    int radius = DpiScale(8); // 圆角直径
+    int stepDx = DpiScale(2); // 条纹宽度，越小越平滑，但绘制调用次数越多
+    int n = std::max(1, rcBgDx / stepDx);
+    int dn = std::max(1, rcFg.dx / stepDx);
+    for (int i = 0; i < dn; i++) {
+        float t = (float)i / (float)(n - 1 > 0 ? n - 1 : 1);
+        Color c = LerpColor(colStart, colEnd, t);
+        Rect strip{rcFg.x + i * stepDx, rcFg.y, stepDx, rcFg.dy};
+        gfx->FillRect(strip, c);
+        // gfx->FillRoundedRect(strip, radius, c, ThemeControlBackgroundColor());
+    }
+}
+
+struct HomeTransferRowCtrl : VirtCtrl {
+    FileUploadState* item = nullptr; // not owned
+    const StrVec* filterWords = nullptr;
+    Vec<u8>* highlighted = nullptr;
+
+    HomeTransferRowCtrl() {
+        kind = kindHomeTransferRowCtrl;
+        // flags |= vwfNoHitTest;
+        cursor = CursorId::Hand;
+        onGetTooltip = MkMethod1<HomeTransferRowCtrl, VirtTooltipEvent*, &HomeTransferRowCtrl::OnGetTooltip>(this);
+    }
+
+    void OnGetTooltip(VirtTooltipEvent* ev) {
+        // logf("Row::OnGetTooltip called, item=%p, filePath=%s\n", item, item ? Str(item->filePath) : StrL("null"));
+        if (!item) return;
+        ev->tip = str::DupTemp(Str(item->filePath));
+    }
+
+    void Paint(VirtPaintCtx& ctx) override {
+        if (!item || !filterWords || !highlighted) {
+            return;
+        }
+        Gfx* gfx = ctx.gfx;
+        Rect r = ctx.content;
+        PlatformFont* font = HomePageFont(12); // 与 HomeEntryCtrl::Paint 一致的取字体方式
+        gfx->FillRect(ctx.content, ThemeWindowControlBackgroundColor());
+
+        gfx->PushClip(ctx.clip);
+
+        int padding = DpiScale(8);
+        int colGap = DpiScale(8);
+        int gap = DpiScale(4);
+        int rowH = kHomeTransferListRowDy;
+        int panelW = r.dx - 3 * padding;
+
+        // --- 每个文件的进度行 ---
+        int pctW = DpiScale(80);                                   // 百分比列
+        int prgW = DpiScale(100);                                  // 进度条列
+        int sizeW = DpiScale(200);                                 // 已上传/总大小列
+        int fileNameW = panelW - prgW - pctW - sizeW - 3 * colGap; // 文件名列
+        int col1X = r.x;
+        int col2X = col1X + fileNameW + colGap;
+        int col3X = col2X + prgW + colGap;
+        int col4X = col3X + pctW + colGap;
+
+        FileUploadState* fs = item;
+
+        // 文件名（取 basename）
+        TempStr baseName = path::GetBaseNameTemp(Str(fs->filePath));
+        Rect rcName{r.x, r.y, fileNameW, rowH};
+        u32 nameFmt = gfxTextEllipsis | gfxTextVCenter | gfxTextLeft;
+        DrawMaybeHighlightedText(gfx, rcName, baseName, *filterWords, *highlighted, ThemeMainWindowBackgroundColor(),
+                                 IsUIRtl(), false, gfxTextEllipsis, HomePageFont(14), ThemeWindowTextColor());
+        // gfx->DrawText(baseName, rcName, nameFmt, font, ThemeWindowTextColor());
+
+        // 第二列：进度条
+        int barH = DpiScale(6);
+        Rect rcBar = {col2X, r.y + (r.dy - barH) / 2, prgW, rowH - padding};
+
+        // 外框 + 按比例填充，仿 NotifProgressCtrl::Paint
+        Color col = AccentColor(ThemeMainWindowBackgroundColor(), 60);
+        // gfx->DrawRect(rcBar, col);
+        gfx->FillRoundedRect(rcBar, DpiScale(8), kColorTransparent, col);
+        if (fs->totalBytes > 0) {
+            Rect rcFill = rcBar;
+            // rcFill.x += 2;
+            rcFill.dx = (int)(rcBar.dx * fs->uploadedBytes.Load() / fs->totalBytes);
+            // rcFill.y += 2;
+            // rcFill.dy -= 3;
+            // Color colStart = MkRgb(0x3b, 0x82, 0xf6);
+            // Color colEnd = MkRgb(0x06, 0xb6, 0xd4);
+            // Color colEnd = MkRgb(0x34, 0xd3, 0x99);
+            int radius = rcBar.dy; // capsule ends: diameter == bar height
+            // if (rcFill.dx < 0) {
+            //     // gfx->FillRect(rcFill, col);
+            //     DrawGradientBar(gfx, rcFill, rcBar.dx, colStart, colEnd);
+            // } else if (rcFill.dx == 0){
+            //     gfx->FillRoundedRectGradient(rcBar, radius, colStart, colEnd, /*horizontal=*/true);
+            // } else {
+            gfx->PushClipRounded(rcBar, radius);
+            gfx->FillRectGradient(rcFill, kColStart, kColEnd);
+            gfx->PopClip();
+            // }
+        }
+
+        int iconDx = DpiScale(20);
+        int iconDy = iconDx;
+
+        // 百分比
+        int filePct = (fs->totalBytes > 0) ? (int)(fs->uploadedBytes.Load() * 100 / fs->totalBytes) : 0;
+        // TempStr statusText = item->done ? str::FormatTemp("\u2713 %s", StrL("完成")) : str::FormatTemp("%d%%",
+        // item->percent);
+        Pixmap* doneIcon = GetCachedPixmapForSvg(Str(gIconDone), iconDx, iconDy);
+        Pixmap* failedIcon = GetCachedPixmapForSvg(Str(gIconFailed), iconDx, iconDy);
+        Pixmap* transferIcon = GetCachedPixmapForSvg(Str(gIconHourGlass), iconDx, iconDy);
+        TempStr pctStr = fs->isDone ? (fs->isFailed ? str::DupTemp(StrL("FAIL")) : str::DupTemp(StrL("完成")))
+                                    : fmt("(%d%%)", filePct);
+        Pixmap* progressIcon = fs->isDone ? (fs->isFailed ? failedIcon : doneIcon) : transferIcon;
+        Rect rcPct = {col3X, r.y, pctW, rowH};
+        Rect pgRct = rcPct;
+        if (progressIcon) {
+            int iconY = pgRct.y + (pgRct.dy - iconDy) / 2; // 垂直居中
+            int iconX;
+            // if (isRtl) {
+            //     iconX = sizeRect.x; // RTL 下 size 在左侧，图标贴在 size 右边
+            // } else {
+            iconX = pgRct.x; // LTR 下图标在 size 文字左边
+            // }
+            ctx.gfx->DrawPixmap(progressIcon, {iconX, iconY, iconDx, iconDy});
+            // 图标占用的宽度要从 sizeRect 里扣掉，剩余空间才给文字
+            pgRct.x += iconDx + gap;
+            pgRct.dx = pgRct.dx - (iconDx + gap);
+        }
+        gfx->FillRect(pgRct, ThemeWindowControlBackgroundColor());
+        u32 statusFmt = gfxTextVCenter | gfxTextLeft;
+        Color statusCol = !fs->isFailed ? ThemeWindowTextColor() : ThemeWindowTextDisabledColor();
+        gfx->DrawText(pctStr, pgRct, statusFmt, font, statusCol);
+
+        // 已上传 / 总大小
+        // TempStr sizeStr = fmt("%s / %s", str::FormatSizeShortTemp(fs->uploadedBytes.Load()),
+        // str::FormatSizeShortTemp(fs->totalBytes));
+        TempStr sizeTextLeft = fmt("%s", str::FormatSizeShortTemp(fs->uploadedBytes.Load()));
+        TempStr sizeTextRight = fmt("%s", str::FormatSizeShortTemp(fs->totalBytes));
+        Rect rcSize = {col4X, r.y, sizeW, rowH};
+        // 上传图标：画在 size 文字前面（RTL 需要镜像方向）
+        Pixmap* uploadIcon = GetCachedPixmapForSvg(Str(gIconUpload), iconDx, iconDy);
+        Rect sizeRect = rcSize; // 原来给 size 文字用的矩形
+        if (uploadIcon) {
+            int iconY = sizeRect.y + (sizeRect.dy - iconDy) / 2; // 垂直居中
+            int iconX;
+            // if (isRtl) {
+            //     iconX = sizeRect.x; // RTL 下 size 在左侧，图标贴在 size 右边
+            // } else {
+            iconX = sizeRect.x; // LTR 下图标在 size 文字左边
+            // }
+            ctx.gfx->DrawPixmap(uploadIcon, {iconX, iconY, iconDx, iconDy});
+            // 图标占用的宽度要从 sizeRect 里扣掉，剩余空间才给文字
+            sizeRect.x += iconDx + gap;
+            sizeRect.dx = sizeRect.dx / 2 - (iconDx + gap);
+        }
+        gfx->FillRect(sizeRect, ThemeWindowControlBackgroundColor());
+        u32 sizeUploadFmt = gfxTextVCenter | gfxTextEllipsis | gfxTextLeft;
+        gfx->DrawText(sizeTextLeft, sizeRect, sizeUploadFmt, font, ThemeWindowTextDisabledColor());
+        Pixmap* cloudUploadIcon = GetCachedPixmapForSvg(Str(gIconCloudUpload), iconDx, iconDy);
+        Rect sizeRtRect = sizeRect; // 原来给 size 文字用的矩形
+        if (cloudUploadIcon) {
+            int iconY = sizeRtRect.y + (sizeRtRect.dy - iconDy) / 2; // 垂直居中
+            int iconX;
+            sizeRtRect.x += sizeRtRect.dx;
+            // if (isRtl) {
+            //     iconX = sizeRect.x; // RTL 下 size 在左侧，图标贴在 size 右边
+            // } else {
+            iconX = sizeRtRect.x; // LTR 下图标在 size 文字左边
+            // }
+            ctx.gfx->DrawPixmap(cloudUploadIcon, {iconX, iconY, iconDx, iconDy});
+            // 图标占用的宽度要从 sizeRect 里扣掉，剩余空间才给文字
+            sizeRtRect.x += iconDx + gap;
+            // sizeRtRect.dx -= iconDx + gap + padding;
+        }
+        gfx->FillRect(sizeRtRect, ThemeWindowControlBackgroundColor());
+        u32 sizeCloudUploadFmt = gfxTextVCenter | gfxTextEllipsis | gfxTextLeft;
+        gfx->DrawText(sizeTextRight, sizeRtRect, sizeCloudUploadFmt, font, ThemeWindowTextDisabledColor());
+
+        gfx->PopClip();
+    }
+};
+
+static void HomeTransferRowOpenClicked(MainWindow* win, VirtMouseEvent* ev) {
+    auto* row = (HomeTransferRowCtrl*)ev->target;
+    if (!row->item || len(row->item->filePath) == 0) {
+        return;
+    }
+    // 传输中/失败的文件本地可能还没有落盘，只有完成的才允许点开
+    LoadArgs args(Str(row->item->filePath), win);
+    args.activateExisting = !ev->isCtrl;
+    args.activateExistingInWindow = true;
+    StartLoadDocument(&args);
+}
+
+static void HomeTransferCloseClicked(HomeTransferListCtrl* tl, VirtMouseEvent*);
+
+struct HomeTransferListCtrl : VirtCtrl {
+    MainWindow* win = nullptr; // 用于关闭时找到 chrome->entries 做还原
+    // 不再持有 items 指针字段——每次用的时候直接从 win->uploadProgress 现取，
+    // 避免"构造一次、永久生效"的假设（win->uploadProgress 可能被替换/清空）
+    // UploadProgress* up = nullptr;
+    // Vec<FileUploadState*>* items;
+    VirtCloseButton* closeBtn = nullptr;
+    StrVec filterWords;
+    Vec<u8> highlighted;
+    bool entriesInited = false; // 新增：标记控件是否已经建好
+    int rowH = 0;
+    int headerH = 0;
+    int padding = 0;
+    int scrollY = 0;   // 独立于 win->homePageScrollY，只管这个控件内部
+    int contentDy = 0; // 所有行叠起来的总高度（不含 header）
+    int visibleDy = 0; // 可视区域高度（不含 header）
+    i64 totalBytes = 0;
+    i64 uploadedBytes = 0;
+    // must be saved explicitly — the
+    // initializer list below only
+    // touches `items`, so without this
+    // line `win` stays nullptr and
+    // HomeTransferCloseClicked/EnsureHomeChrome(win)
+    // calls later would cras
+
+    // HomeTransferListCtrl(MainWindow* win) : win(win), up(win->uploadProgress ? win->uploadProgress : nullptr),
+    // items(win->uploadProgress ? &win->uploadProgress->fileStates : nullptr) {
+    HomeTransferListCtrl(MainWindow* win) : win(win) {
+        // items = MakeFakeTransferItems();
+        // items = &win->uploadProgress->fileStates;
+        kind = kindHomeTransferListCtrl;
+        flags |= vwfNoHitTest | vwfClipChildren; // 关键：裁剪超出自身 bounds 的子控件
+        // rowH = DpiScale(28);
+        rowH = kHomeTransferListRowDy;
+        headerH = kHomeTransferListRowDy;
+        padding = DpiScale(8);
+
+        closeBtn = new VirtCloseButton();
+        closeBtn->onClick = MkFunc1(HomeTransferCloseClicked, this);
+        AddChild(closeBtn);
+
+        // 不在这里调用 SetEntryCount：uploadProgress 此刻大概率还是 nullptr，
+        // 真正的行数同步挪到 SetBounds() 里，每次都重新计算
+        // SetEntryCount(items ? len(*items) : 0);
+    }
+
+    // 小助手：每次用的时候现取，而不是缓存
+    Vec<FileUploadState*>* CurrentItems() const {
+        if (!win || !win->uploadProgress) {
+            return nullptr;
+        }
+        return &win->uploadProgress->fileStates;
+    }
+
+    HomeTransferRowCtrl* EntryAt(int idx) {
+        // children[0] 是 closeBtn，行从 children[1] 开始
+        return (HomeTransferRowCtrl*)ChildAt(idx + 1);
+    }
+
+    void SetEntryCount(int n) {
+        // ChildCount() 包含 closeBtn，行数 = ChildCount() - 1
+        while (ChildCount() - 1 > n) {
+            RemoveChild(children[ChildCount() - 1], true);
+        }
+        while (ChildCount() - 1 < n) {
+            auto* row = new HomeTransferRowCtrl();
+            row->onClick = MkFunc1(HomeTransferRowOpenClicked, win);
+            AddChild(row);
+        }
+
+        // for (int i = 0; i < n; i++) {
+        //     EntryAt(i)->item = (*items)[i];
+        // }
+    }
+
+    // 完全照抄 LayoutHomePage 里 thumbsStartX/thumbsContentWidth 的算法，
+    // 只依赖 r.dx（== 画布宽度），自给自足，任何调用路径(首次布局/缓存滚动)
+    // 都会得到一致结果，因为公式本身是纯函数、不依赖外部状态
+    static void ComputeAlignedContentBounds(int rcDx, int nFilesForLayout, int& outStartX, int& outWidth) {
+        int colsForLayout = (rcDx - kThumbsMarginLeft - kThumbsMarginRight + kThumbsSpaceBetweenX) /
+                            (kThumbnailDx + kThumbsSpaceBetweenX);
+        int cols = std::max(colsForLayout, 1);
+        int startX = kThumbsMarginLeft + ((rcDx - (cols * kThumbnailDx) - ((cols - 1) * kThumbsSpaceBetweenX) -
+                                           kThumbsMarginLeft - kThumbsMarginRight) /
+                                          2);
+        if (startX < DpiScale(kInnerPadding)) {
+            startX = DpiScale(kInnerPadding);
+        } else if (nFilesForLayout == 0) {
+            startX = kThumbsMarginLeft;
+        }
+        outStartX = startX;
+        outWidth = (cols * kThumbnailDx) + ((cols - 1) * kThumbsSpaceBetweenX);
+    }
+
+    void SetBounds(Rect r) override {
+        // Point po = parent ? parent->ChildOriginInWindow() : Point{0,0};
+        // logf("TransferList: parent origin=(%d,%d), incoming r=(%d,%d,%d,%d)\n",
+        //      po.x, po.y, r.x, r.y, r.dx, r.dy);
+        VirtCtrl::SetBounds(r);
+        // logf("TransferList: resulting bounds=(%d,%d,%d,%d)\n",
+        //      bounds.x, bounds.y, bounds.dx, bounds.dy);
+
+        Vec<FileUploadState*>* allItems = CurrentItems();
+        int nAll = allItems ? len(*allItems) : 0;
+        // 数量固定不变（上传开始前一次性创建，全程只改内容不增删），
+        // 只在第一次拿到有效数据时建一次行控件，之后永远跳过
+        // if (!entriesInited && n > 0) {
+        //     SetEntryCount(n);
+        //     entriesInited = true;
+        // }
+        // --- filter, same pattern as LayoutHomePage ---
+        filterWords.Reset();
+        TempStr searchQuery = win->homeSearch ? win->homeSearch->GetTextTemp() : Str();
+        bool hasFilter = searchQuery && searchQuery.s[0];
+        if (hasFilter) {
+            SplitFilterToWords(searchQuery, filterWords);
+        }
+        Vec<FileUploadState*> filtered;
+        for (int i = 0; i < nAll; i++) {
+            FileUploadState* it = (*allItems)[i];
+            TempStr baseName = path::GetBaseNameTemp(Str(it->filePath));
+            if (hasFilter && !FilterMatches(baseName, filterWords)) {
+                continue;
+            }
+            VecAppend(filtered, it);
+        }
+
+        int rowCount = len(filtered);
+        SetEntryCount(rowCount);
+
+        int margin, rowDx;
+        ComputeAlignedContentBounds(r.dx, rowCount, margin, rowDx);
+        int diam = DpiScale(18);
+        // closeBtn->SetBounds({r.x + r.dx - margin - diam, r.y + margin, diam, diam});
+        Rect rcClose{margin + rowDx - diam, r.y + ((headerH - diam) / 2), diam, diam};
+        closeBtn->SetBounds(rcClose);
+
+        margin += r.x; // r.x恒为0,但保留以防未来复用到非0起点的容器
+        // int rowCount = entriesInited ? n : 0; // 未初始化前不布局任何行
+
+        // --- 滚动相关的几何计算 ---
+        int topY = r.y + headerH * 2 + padding;
+        visibleDy = std::max(0, r.dy - (topY - r.y));
+        contentDy = rowCount * rowH;
+
+        int maxScrollY = std::max(0, contentDy - visibleDy);
+        if (scrollY > maxScrollY) {
+            scrollY = maxScrollY;
+        }
+        if (scrollY < 0) {
+            scrollY = 0;
+        }
+
+        int y = topY - scrollY;
+        int visibleTop = r.y + topY - r.y; // 等价于 topY，写全是为了强调这是绝对坐标
+        for (int i = 0; i < rowCount; i++) {
+            HomeTransferRowCtrl* row = EntryAt(i);
+            // HomeTransferRowCtrl* row = (HomeTransferRowCtrl*)children[/* skip closeBtn */ i + 1];
+            // EntryAt(i)->SetBounds({margin, y, rowDx, rowH});
+            row->item = filtered[i]; // 直接指向当前数据，不做拷贝
+            row->filterWords = &filterWords;
+            row->highlighted = &highlighted;
+            Rect rcRow{margin, y, rowDx, rowH};
+            row->SetBounds(rcRow);
+            // 完全滚出可视区的行没必要参与命中测试/绘制，直接折叠
+            bool onScreen = (y + rowH > topY) && (y < r.y + r.dy - rowH);
+            row->visibility = onScreen ? Visibility::Visible : Visibility::Collapse;
+            // logf("TransferRow[%d]: item=%p absoluteRect=(%d,%d,%d,%d) resultingBounds=(%d,%d,%d,%d)\n",
+            //      i, row->item,
+            //      rcRow.x, rcRow.y, rcRow.dx, rcRow.dy,
+            //      row->bounds.x, row->bounds.y, row->bounds.dx, row->bounds.dy);
+            y += rowH;
+        }
+    }
+
+    // 提供给外部滚轮/滚动条调用
+    void ScrollBy(int dy) {
+        int maxScrollY = std::max(0, contentDy - visibleDy);
+        int newScrollY = std::clamp(scrollY + dy, 0, maxScrollY);
+        if (newScrollY != scrollY) {
+            scrollY = newScrollY;
+            SetBounds(lastBounds); // 用已保存的绝对矩形重新走一遍布局
+            HwndInvalidateRect(win->hwndCanvas, lastBounds, false);
+        }
+    }
+
+    void Paint(VirtPaintCtx& ctx) override {
+        Vec<FileUploadState*>* items = CurrentItems();
+        if (!items || len(*items) == 0) {
+            // 数据已经消失（比如传输被取消/清空），本帧不画任何内容；
+            // 是否连带隐藏自己交给 HomePageSyncChrome 统一的可见性判断处理
+            return;
+        }
+
+        UploadProgress* up = win->uploadProgress;
+
+        Gfx* gfx = ctx.gfx;
+        Rect r = ctx.content;
+        int left, rowDx;
+        ComputeAlignedContentBounds(bounds.dx, len(*items), left, rowDx);
+        Rect visibleRec = {r.x + left - DpiScale(10), r.y, r.dx - (left - DpiScale(10)) * 2, r.dy};
+        gfx->FillRect(visibleRec, ThemeControlBackgroundColor());
+        // Color colStart = MkRgb(0x3b, 0x82, 0xf6);
+        // Color colEnd = MkRgb(0x06, 0xb6, 0xd4);
+        // DrawGradientBar(gfx, r, colStart, colEnd);
+
+        // Paint() 内 r 是局部坐标，left 直接就是局部坐标(因为公式基于 rcDx 而非绝对窗口坐标)
+        PlatformFont* font = HomePageFont(14);
+        // int nDone = 0;
+        // for (auto& it : *items) {
+        //     if (it->isDone) {
+        //         nDone++;
+        //     }
+        // }
+        // 标题文字宽度让出关闭按钮的位置，避免文字被按钮盖住
+        int diam = DpiScale(18);
+        int nTotal = up->nTotal;
+        totalBytes = up->totalBytes;
+        uploadedBytes = up->uploadedBytes.Load();
+        int nCompleted = AtomicIntGet(&up->nCompleted);
+        int globalPct = (totalBytes > 0) ? (int)(uploadedBytes * 100 / totalBytes) : 0;
+        TempStr title = fmt("Uploading: %d / %d files  (%d%%, %s / %s)", nCompleted, nTotal, globalPct,
+                            str::FormatSizeShortTemp(uploadedBytes), str::FormatSizeShortTemp(totalBytes));
+        Rect rcTitle{r.x + left, r.y, rowDx - diam - padding, headerH};
+        gfx->DrawText(title, rcTitle, gfxTextVCenter | gfxTextLeft, font, ThemeWindowTextColor());
+
+        // Color lineCol = AccentColor(ThemeMainWindowBackgroundColor(), 30);
+        // gfx->DrawLine(Rect(r.x + left, r.y + headerH, rowDx, 0), lineCol);
+        int barX = r.x + left;
+        int barW = rowDx;
+        int barH = DpiScale(8);
+        Rect rcBar{barX, r.y + headerH + padding, barW, barH};
+
+        // 外框 + 按比例填充，仿 NotifProgressCtrl::Paint
+        Color col = AccentColor(ThemeMainWindowBackgroundColor(), 60);
+        // gfx->DrawRect(rcBar, col);
+        gfx->FillRoundedRect(rcBar, DpiScale(8), kColorTransparent, col);
+        Rect rcFill = rcBar;
+        // rcFill.x += 2;
+        // rcFill.dx = (rcBar.dx - 3) * std::clamp(items[0].percent, 0, 100) / 100;
+        rcFill.dx = (rcBar.dx) * globalPct / 100;
+        // rcFill.y += 2;
+        // rcFill.dy -= 3;
+        int radius = rcBar.dy;
+        if (rcFill.dx > 0) {
+            // gfx->FillRect(rcFill, col);
+            // DrawGradientBar(gfx, rcFill, rcBar.dx, kColStart, colEnd);
+            gfx->PushClipRounded(rcBar, radius);
+            gfx->FillRectGradient(rcFill, kColStart, kColEnd);
+            gfx->PopClip();
+        }
+        // children (rows + closeBtn) 由 PaintChildren 自动递归绘制
+
+        PaintChildren(ctx);
+    }
+};
+
+// 点击传输面板的 ✕：关闭传输 UI，还原成正常的缩略图/列表视图
+static void HomeTransferCloseClicked(HomeTransferListCtrl* tl, VirtMouseEvent*) {
+    logf("HomeTransferCloseClicked is clicked!\n");
+    MainWindow* win = tl->win;
+    if (!IsMainWindowValid(win)) {
+        return;
+    }
+    // tl->visibility = Visibility::Collapse;
+
+    // 标记取消：正在跑的模拟线程下一次 Sleep 醒来后检查到即退出，
+    // 不再 Post 任何进度更新（ApplyTransferProgressUpdate 里已有
+    // visibility != Visible 的兜底判断，这里是双保险，避免线程空跑）
+    delete win->uploadProgress;
+    win->uploadProgress = nullptr;
+    tl->entriesInited = false;
+
+    // HomeChromeCtrl* chrome = EnsureHomeChrome(win);
+    // chrome->transferList->visibility = Visibility::Collapse;
+    // chrome->entries->visibility = Visibility::Visible;
+
+    // transferList 占用的区域和 entries 占用的区域是同一块（HomePageSyncChrome
+    // 里两者都被 SetBounds 成 l.rcThumbsArea），所以只需要 invalidate 这一块，
+    // 不需要走完整的 ScheduleRepaint/整窗口重绘
+    HwndInvalidateRect(win->hwndCanvas, tl->lastBounds, false);
+}
+
+static bool HomePageSelectTransferRow(MainWindow* win) {
+    if (win->uploadProgress) {
+        // re-run SetBounds so the row set / rcClose reflect the new filter immediately
+        HomeChromeCtrl* chrome = EnsureHomeChrome(win);
+        if (chrome->transferList) {
+            chrome->transferList->SetBounds(chrome->transferList->lastBounds);
+        }
+        HwndInvalidateRect(win->hwndCanvas, chrome->transferList->lastBounds, false);
+        return true;
+    }
+    return false;
+}
+
+static void OnUploadProgressUI(UploadProgressUIData* d) {
+    AtomicBoolSet(&gTransferRepaintPending, false);
+    AutoDelete del(d);
+    MainWindow* win = d->win;
+    if (!IsMainWindowValid(win)) return; // 窗口可能在异步过程中被关闭
+    win->uploadProgress = d->progress;
+    if (!win->IsCurrentTabAbout()) {
+        return; // 已经离开首页，不用再画
+    }
+
+    HomeChromeCtrl* chrome = EnsureHomeChrome(win);
+    HomeTransferListCtrl* tl = chrome->transferList;
+    // logf("OnUploadProgressUI: tl=%p\n", tl);
+    if (!tl) {
+        return;
+    }
+    // logf("OnUploadProgressUI: win->uploadProgress=%p\n", win->uploadProgress);
+    // logf("OnUploadProgressUI: win->uploadProgress->nTotal=%d\n", win->uploadProgress->nTotal);
+    if (!win->uploadProgress || win->uploadProgress->nTotal < 1) {
+        return;
+    }
+    if (tl->visibility != Visibility::Visible) {
+        chrome->entries->visibility = Visibility::Collapse;
+        tl->visibility = Visibility::Visible;
+    }
+    // 关键区别于 ScheduleRepaint(win, ...) 的 HwndInvalidate(hwnd)：
+    // 这里只标记 transferList 自己的绝对矩形为脏区，不重绘整个画布。
+    // tl->lastBounds 是 VirtCtrl::SetBounds 保存的、传入时的绝对窗口坐标
+    // （src/gui/VirtCtrl.cpp:102-114），正好是我们要重绘的区域。
+
+    // https://deepwiki.com/search/windowshomepagelayout_87fb179e-3cfc-44a0-8e73-34089a4c6d06
+    // tl->lastBounds 是 VirtCtrl 的成员,只有在 SetBounds() 被真正调用过一次之后才会被赋上有效值(lastBounds =
+    // r;),而默认构造时是 Rect{}(即 0,0,0,0)——一个空矩形。
+    //
+    // chrome->transferList->SetBounds(l.rcThumbsArea) 这一行只在 HomePageSyncChrome 里执行,而 HomePageSyncChrome
+    // 只在一次真正的 WM_PAINT/DrawHomePage 绘制流程里才会被调用。也就是说:
+    //
+    //     传输刚开始时,chrome->transferList 刚被 EnsureHomeChrome 创建出来,还没有经历过任何一次完整的绘制流程,所以
+    //     tl->lastBounds 还是 {0,0,0,0}。 这时 OnUploadProgressUI 调用 HwndInvalidateRect(hwnd, tl->lastBounds,
+    //     false),传入的是空矩形,InvalidateRect 直接被跳过,根本没有请求 WM_PAINT。 于是既不会触发
+    //     DrawHomePage,也不会触发 HomePageSyncChrome,tl->lastBounds
+    //     永远得不到第一次真正赋值——形成"先有鸡还先有蛋"的死锁:没有 paint 就没有 bounds,没有 bounds
+    //     就没有(有效的)invalidate 去触发 paint。
+    //     直到传输全部完成时,某个别的代码路径(比如完成通知、RedrawAll、或窗口被其它事件触发了一次整窗口重绘)恰好做了一次不依赖
+    //     tl->lastBounds 的全量 invalidate/重绘,这才是整个生命周期里第一次真正跑到
+    //     HomePageSyncChrome,transferList->SetBounds(l.rcThumbsArea) 才第一次被执行、lastBounds
+    //     第一次被填上正确值——这正好和你观察到的"只有全部完成后才显示"完全吻合。
+    if (tl->lastBounds.IsEmpty()) {
+        // 还没有经历过一次真正的布局(SetBounds 从未被调用过),
+        // 局部 invalidate 会因为空矩形被直接跳过——必须先来一次全窗口重绘
+        // 才能让 HomePageSyncChrome 跑一遍，把 lastBounds 填上正确值
+        HwndInvalidate(win->hwndCanvas, false);
+    } else {
+        HwndInvalidateRect(win->hwndCanvas, tl->lastBounds, false);
+    }
+}
+
+void OnUploadProgress(UploadProgressUIData* ctx, UploadProgress* p) {
+    // 限流：每次回调都 Post（如需限流可加时间戳判断）
+    auto d = new UploadProgressUIData{ctx->win, p};
+    bool alreadyPending = InterlockedExchange(&gTransferRepaintPending, 1) != 0;
+    if (alreadyPending) return; // a repaint is already queued; it will pick up the latest progress
+    auto fn = MkFunc0(OnUploadProgressUI, d);
+    uitask::Post(fn, nullptr);
+}
+
+void OnUploadFinishedUI(UploadProgressUIData* d) {
+    AutoDelete del(d);
+    if (!IsMainWindowValid(d->win)) return;
+    if (!d->win->uploadProgress) return;
+    delete (d->win->uploadProgress);
+    d->win->uploadProgress = nullptr;
+    d->win->RedrawAll(false);
+}
+
+bool HomeTransferOnMouseWheel(MainWindow* win, int delta) {
+    HomeChromeCtrl* chrome = EnsureHomeChrome(win);
+    if (chrome->transferList && chrome->transferList->visibility == Visibility::Visible) {
+        int scrollStep = kHomeTransferListRowDy * 3;
+        int scrollBy = delta > 0 ? -scrollStep : scrollStep;
+        chrome->transferList->ScrollBy(scrollBy);
+        return true;
+    }
+    return false;
+}
+
+bool HomeTransferVscroll(MainWindow* win, WPARAM wp) {
+    HomeChromeCtrl* chrome = EnsureHomeChrome(win);
+    if (chrome->transferList && chrome->transferList->visibility == Visibility::Visible) {
+        USHORT vmsg = LOWORD(wp);
+        int rowDy = kHomeListRowDy;
+        int lineDy = rowDy, pageDy = rowDy * 3;
+        int by = 0;
+        switch (vmsg) {
+            case SB_LINEUP:
+                by = -lineDy;
+                break;
+            case SB_LINEDOWN:
+                by = lineDy;
+                break;
+            case SB_PAGEUP:
+                by = -pageDy;
+                break;
+            case SB_PAGEDOWN:
+                by = pageDy;
+                break;
+            case SB_THUMBTRACK:
+            case SB_THUMBPOSITION: {
+                int pos = (int)(short)HIWORD(wp);
+                if (win->overlayScrollV) pos = win->overlayScrollV->nTrackPos;
+                by = pos - chrome->transferList->scrollY;
+                break;
+            }
+            case SB_TOP:
+                by = -chrome->transferList->scrollY;
+                break;
+            case SB_BOTTOM:
+                by = INT_MAX;
+                break;
+        }
+        chrome->transferList->ScrollBy(by);
+        return true;
+    }
+    return false;
+}
 
 struct HomeSearchEdit : Edit {
     MainWindow* win = nullptr;
@@ -1175,6 +1817,7 @@ static void HomeSearchTextChanged(MainWindow* win) {
     // the filter changed the list, so select its first entry (#1136)
     HomePageSelectFirst(win);
     HomePageRelayout(win);
+    if (HomePageSelectTransferRow(win)) return;
     HwndInvalidate(win->hwndCanvas);
 }
 
@@ -1714,6 +2357,9 @@ static void LayoutHomePage(HomePageLayout& l) {
     int thumbsVisibleDy = std::max(0, thumbsBottomY - thumbsTopY);
 
     l.rcThumbsArea = {0, thumbsTopY, rc.dx, thumbsVisibleDy};
+    logf("HomePage: rcSearchBorder=(%d,%d,%d,%d) rcThumbsArea=(%d,%d,%d,%d)\n", l.rcSearchBorder.x, l.rcSearchBorder.y,
+         l.rcSearchBorder.dx, l.rcSearchBorder.dy, l.rcThumbsArea.x, l.rcThumbsArea.y, l.rcThumbsArea.dx,
+         l.rcThumbsArea.dy);
 
     int nFiles = len(fileStates);
     bool showList = HomePageIsListView();
@@ -2745,6 +3391,9 @@ static HomeChromeCtrl* EnsureHomeChrome(MainWindow* win) {
     // reaches OnMouseMove() and clears the active entry
     chrome->entries->flags |= vwfClipChildren;
     chrome->AddChild(chrome->entries);
+    chrome->transferList = new HomeTransferListCtrl(win);
+    // chrome->transferList->visibility = Visibility::Collapse;
+    chrome->AddChild(chrome->transferList);
 
     chrome->thumbView = new HomeViewIconCtrl();
     chrome->thumbView->listView = false;
@@ -2842,6 +3491,7 @@ bool HomePageOnCanvasMessage(MainWindow* win, UINT msg, WPARAM wp, LPARAM lp, LR
     Point ptLocal{0, 0};
     ILayout* el = ElementFromPoint(root, pt, &ptLocal);
     VirtCtrl* w = el ? el->AsVirtCtrl() : nullptr;
+    // logf("SETCURSOR hit=%p name=%s\n", w, w ? Str(w->kind) : StrL("null"));
     if (!w || !w->OnSetCursor(ptLocal)) {
         return false;
     }
@@ -2880,6 +3530,25 @@ static void HomePageSyncChrome(HomePageLayout& l) {
     // file entries: clipped to the thumbnails band, like the static links were
     HomeEntriesCtrl* entries = chrome->entries;
     entries->SetBounds(l.rcThumbsArea);
+    // logf("HomePage: entries bounds set to (%d,%d,%d,%d)\n",
+    // l.rcThumbsArea.x, l.rcThumbsArea.y, l.rcThumbsArea.dx, l.rcThumbsArea.dy);
+    if (chrome->transferList) {
+        // logf("len(fileStates) = %d\n", win->uploadProgress ? len(win->uploadProgress->fileStates) : 0);
+        if (win->uploadProgress) { //&& len(win->uploadProgress->fileStates) > 0) {
+            chrome->transferList->SetBounds(l.rcThumbsArea);
+            // logf("HomePage: entries visibility=%d transferList visibility=%d gShowFakeTransferUI=%d\n",
+            // (int)entries->visibility, (int)chrome->transferList->visibility,  1);
+            // logf("HomePage: entries bounds set to (%d,%d,%d,%d)\n",
+            // l.rcThumbsArea.x, l.rcThumbsArea.y, l.rcThumbsArea.dx, l.rcThumbsArea.dy);
+            chrome->transferList->visibility = Visibility::Visible;
+            chrome->entries->visibility = Visibility::Collapse;
+        } else {
+            chrome->transferList->visibility = Visibility::Collapse;
+            chrome->entries->visibility = Visibility::Visible;
+            // logf("HomePage: entries visibility=%d transferList visibility=%d gShowFakeTransferUI=%d\n",
+            // (int)entries->visibility, (int)chrome->transferList->visibility,  0);
+        }
+    }
     auto& cache = HomeLayout(win);
     entries->filterWords = &cache.filterWords;
     entries->highlighted = &cache.highlighted;
@@ -2964,12 +3633,17 @@ static void DrawHomePageLayout(HomePageLayout& l) {
     // view buttons, and "Open a document..."
     win->homeRoot->Paint(gfx, l.rc);
 
+    // HomeChromeCtrl* vchrome = EnsureHomeChrome(win);
+    // bool entriesVisible = vchrome->entries->visibility == Visibility::Visible;
+    bool entriesVisible = !win->uploadProgress;
+
     // thumbnails selection outline: after the entries so it sits on top of the
     // thumbnail, clipped so it cannot paint over the search field or the tip
     // band (issue #5978). A little slack above/below the thumbs band keeps the
     // first row's top curve from being cut off.
     int selIdx = win->homePageSelIdx;
-    bool showSel = !HomePageIsListView() && !HomeSearchHasFocus(win) && selIdx >= 0 && selIdx < nThumbs;
+    bool showSel =
+        entriesVisible && !HomePageIsListView() && !HomeSearchHasFocus(win) && selIdx >= 0 && selIdx < nThumbs;
     if (showSel) {
         ThumbnailLayout& t = l.thumbnails[selIdx];
         if (IsHomeThumbOnScreen(t.rcPage.Union(t.rcText), l.rcThumbsArea)) {
@@ -3002,7 +3676,14 @@ static bool HomePageShouldShow(MainWindow* win) {
 
 static void UpdateHomeOverlayScrollbar(MainWindow* win) {
     auto& c = HomeLayout(win);
-    bool show = c.valid && ScrollbarsUseOverlay() && c.totalContentDy > c.thumbsVisibleDy;
+    HomeChromeCtrl* chrome = EnsureHomeChrome(win);
+    bool transferShowing = chrome->transferList && chrome->transferList->visibility == Visibility::Visible;
+
+    int contentDy = transferShowing ? chrome->transferList->contentDy : c.totalContentDy;
+    int visibleDy = transferShowing ? chrome->transferList->visibleDy : c.thumbsVisibleDy;
+    int posY = transferShowing ? chrome->transferList->scrollY : win->homePageScrollY;
+
+    bool show = c.valid && ScrollbarsUseOverlay() && contentDy > visibleDy;
     if (show) {
         if (!win->overlayScrollV) {
             win->overlayScrollV =
@@ -3012,9 +3693,9 @@ static void UpdateHomeOverlayScrollbar(MainWindow* win) {
         si.cbSize = sizeof(si);
         si.fMask = SIF_ALL;
         si.nMin = 0;
-        si.nMax = c.totalContentDy - 1;
-        si.nPage = c.thumbsVisibleDy;
-        si.nPos = win->homePageScrollY;
+        si.nMax = contentDy - 1;
+        si.nPage = visibleDy;
+        si.nPos = posY;
         OverlayScrollbarShow(win->overlayScrollV, true);
         OverlayScrollbarSetInfo(win->overlayScrollV, &si, TRUE);
     }

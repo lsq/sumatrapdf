@@ -2,6 +2,11 @@
    License: Simplified BSD (see COPYING.BSD) */
 
 extern const char* gIconFileOpen;
+extern const char* gIconUpload;
+extern const char* gIconCloudUpload;
+extern const char* gIconHourGlass;
+extern const char* gIconDone;
+extern const char* gIconFailed;
 extern const char* gIconPrint;
 extern const char* gIconPagePrev;
 extern const char* gIconPageNext;

@@ -203,9 +203,9 @@ SendReport UploadSession::Send(Str host, int port, int workerCount, int chunkSiz
     if (!ParsePrepareUploadResponse(uploadData, &prep)) {
         return report;
     };
-    for (int t = 0; t < len(prep.fileTokens); t++) {
-        logf("ParsePrepareUploadResponse: %s\n", *prep.fileTokens.AtData(t));
-    }
+    // for (int t = 0; t < len(prep.fileTokens); t++) {
+    //     logf("ParsePrepareUploadResponse: %s\n", *prep.fileTokens.AtData(t));
+    // }
     report.prepared = true;
     report.sessionId = str::Dup(prep.sessionId);
 
