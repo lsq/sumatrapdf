@@ -1,6 +1,3 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
 #include "base/Base.h"
 #include "base/File.h"
 #include "base/protocol/Fingerprint.h"

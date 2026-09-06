@@ -4,6 +4,13 @@
 namespace dict {
 
 struct HashTable;
+struct HashTableEntry; // opaque, defined in Dict.cpp
+
+// value returned by dereferencing MapStrToInt::Iterator
+struct StrIntEntry {
+    Str key;
+    int val;
+};
 
 // we are very generous with default initial size. It's a trade-off
 // between memory used by hash table and how often we need to resize it.
@@ -30,6 +37,26 @@ class MapStrToInt {
 
     bool Remove(Str key, int* removedValOut) const;
     bool Get(Str key, int* valOut) const;
+
+    // --- iteration support ---
+    class Iterator {
+      public:
+        Iterator() = default; // sentinel / end()
+        Iterator(HashTable* h, int bucketIdx, HashTableEntry* e) : h(h), bucketIdx(bucketIdx), e(e) {}
+
+        StrIntEntry operator*() const; // implemented in Dict.cpp (needs HashTableEntry layout)
+        Iterator& operator++();        // implemented in Dict.cpp
+        bool operator!=(const Iterator& other) const { return e != other.e; }
+        bool operator==(const Iterator& other) const { return e == other.e; }
+
+      private:
+        HashTable* h = nullptr;
+        int bucketIdx = -1;
+        HashTableEntry* e = nullptr;
+    };
+
+    Iterator begin() const;
+    Iterator end() const { return Iterator(); }
 };
 
 } // namespace dict

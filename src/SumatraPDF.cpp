@@ -6571,45 +6571,6 @@ bool OpenFileForHomePageList(MainWindow* win) {
     return true;
 }
 
-// 进度回调数据（在 uitask::Post 中传递）
-struct UploadProgressUIData {
-    MainWindow* win;
-    UploadProgress* progress;
-};
-
-struct UploadTaskData {
-    MainWindow* win;
-    StrVec filePaths;
-    char* serverA;
-    int port;
-    char* urlA;
-    StrQueue* stopQueue;
-    // UploadProgress* progress; // 指针，独立堆分配
-};
-
-static void OnUploadProgressUI(UploadProgressUIData* d) {
-    AutoDelete del(d);
-    if (!IsMainWindowValid(d->win)) return;
-    d->win->uploadProgress = d->progress;
-    InvalidateRect(d->win->hwndCanvas, nullptr, FALSE);
-}
-
-static void OnUploadProgress(UploadProgressUIData* ctx, UploadProgress* p) {
-    // 限流：每次回调都 Post（如需限流可加时间戳判断）
-    auto d = new UploadProgressUIData{ctx->win, p};
-    auto fn = MkFunc0(OnUploadProgressUI, d);
-    uitask::Post(fn, nullptr);
-}
-
-static void OnUploadFinishedUI(UploadProgressUIData* d) {
-    AutoDelete del(d);
-    if (!IsMainWindowValid(d->win)) return;
-    if (!d->win->uploadProgress) return;
-    delete (d->win->uploadProgress);
-    d->win->uploadProgress = nullptr;
-    d->win->RedrawAll(false);
-}
-
 static void PostUploadFinished(MainWindow* win, UploadProgress* progress) {
     auto d = new UploadProgressUIData{win, progress};
     uitask::Post(MkFunc0(OnUploadFinishedUI, d), "UploadFinished");

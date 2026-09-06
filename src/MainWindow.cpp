@@ -136,6 +136,7 @@ MainWindow::~MainWindow() {
     DeleteSidebarPanel(favoritesTabPanel);
     sidebarTop = sidebarBottom = favoritesTabPanel = nullptr;
     HomePageDestroySearch(this);
+    HomeTransferFreeOnWindowDestroy(this);
     HomePageDestroyChrome(this);
 
     OverlayScrollbarDestroy(overlayScrollV);

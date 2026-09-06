@@ -1,11 +1,78 @@
 /* Copyright 2022 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
+#include <cstddef>
 #include "base/Base.h"
 #include "base/JsonParser.h"
+#include "base/Dict.h"
+#include "base/JsonUtil.h"
 
 // must be last due to assert() over-write
 #include "base/tests/UtAssert.h"
+
+const Str demo = StrL(
+    R"(
+                {
+                    "name": "honey Ratel",
+                    "ages": [10, 20, 30],
+                    "wifes": [{"name":"nancy", "age": 30,"info": {
+                        "children": [
+                            {
+                                "name":"Tom",
+                                "age": 10,
+                                "sex": "Male"
+                            },
+                            {
+                                "name":"Jeff",
+                                "age": 8,
+                                "sex": "Male"
+                            }
+                        ],
+                        "friend": [
+                            {
+                                "name":"Lily",
+                                "age": 12,
+                                "sex": "Female"
+                            },
+                            {
+                                "name":"Brown",
+                                "age": 10,
+                                "sex": "Male"
+                            }
+                        ]
+                    }},
+                    {"name":"Angle", "age": 20,"info": {
+                        "children": [
+                            {
+                                "name":"Brown",
+                                "age": 10,
+                                "sex": "Male"
+                            },
+                            {
+                                "name":"Lily",
+                                "age": 8,
+                                "sex": "Male"
+                            }
+                        ],
+                        "friend": [
+                            {
+                                "name":"Tai",
+                                "age": 12,
+                                "sex": "Female"
+                            },
+                            {
+                                "name":"BuJing",
+                                "age": 10,
+                                "sex": "Male"
+                            }
+                        ]
+                    }}],
+                    "house": {
+                        "New York": ["street No.1"],
+                        "Bei Jing": ["One", "Two", "Three"]
+                    }
+                }
+            )");
 
 struct ExpectedValue {
     Str path;
@@ -328,4 +395,294 @@ void JsonTest() {
         utassert(r.Ok());
         utassert(n == 3);
     }
+
+    {
+        auto onValue = [](void*, json::Value& v) {
+            TempStr path = json::PathFormatTemp(v.path, true);
+            printf("key: %s, value: %.*s\n", path.s, v.value.len, v.value.s);
+        };
+        json::Reader r(demo);
+        for (json::Value& v : r) {
+            onValue(nullptr, v);
+        }
+        // json::Parse(demo, MkFunc1<void, json::Value*>(onValue, nullptr));
+    }
+}
+
+using namespace jsonrefl;
+
+void TestJsonDeserializer() {
+    printf("测试给出结构体信息，把json反序列化为结构体\n-------------------------\n");
+    struct ServerConfig {
+        Str host;
+        int port;
+        bool useTls;
+    };
+
+    // gReducedLogging = false;
+    // gLogToDebugger = true;
+    // gLogToConsole = true;
+    // 2. 定义元数据（与 SettingsUtil 完全相同的格式）
+    FieldInfo gServerConfigFields[] = {
+        {offsetof(ServerConfig, host), Type::String, (intptr_t)"localhost"},
+        {offsetof(ServerConfig, port), Type::Int, 8080},
+        {offsetof(ServerConfig, useTls), Type::Bool, false},
+    };
+    StructInfo gServerConfigInfo = {sizeof(ServerConfig), 3, gServerConfigFields, "host\0port\0useTls"};
+
+    // 3. 反序列化
+    const char* json = R"({"host":"192.168.1.1","port":443,"useTls":true})";
+    // TempStr hostInfo = fmt("%s", json);
+    // auto* cfg = (ServerConfig*)JsonDeserializeStruct(&gServerConfigInfo, hostInfo);
+    auto* cfg = (ServerConfig*)jsonrefl::Deserialize(&gServerConfigInfo, Str(json));
+    // cfg->host == "192.168.1.1", cfg->port == 443, cfg->useTls == true
+    printf("cfg->host == \"%s\", cfg->port == %d, cfg->useTls == %d\n", cfg->host.s, cfg->port, cfg->useTls);
+
+    // struct IpInfo {
+    //     char* info;
+    //     StrVecWithData<ServerConfig> ipPool;
+    // };
+
+    // 4. 释放（复用 SettingsUtil 的 FreeStruct）
+    Free(&gServerConfigInfo, cfg);
+
+    // 下面是错误用法，FreeStruct只是用free标记内存为可重用状态，在生效后，cfg原来指向的内存可能没有清零，另外cfg也仍然指向原来的内存地址，
+    // if (!cfg) {
+    //     printf("cfg free successful!");
+    // } else if (cfg->host.s) { //错误用法
+    //     printf("cfg after free: %s\n", cfg->host.s);
+    // }
+}
+
+struct FileInfo {
+    Str id; // str::Dup 分配，需手动 str::Free
+    Str fileName;
+    int size;
+    Str fileType;
+    Str sha256;  // 可为 nullptr（ 	test_util.exe!Str::operator bool() 行 242	C++ JSON null）
+    Str preview; // 可为 nullptr
+};
+
+struct FileCollection {
+    Str sessionId;
+    MapRaw files;
+};
+
+static const FieldInfo gFileInfoFields[] = {
+    {offsetof(struct FileInfo, id), Type::String, 0},     {offsetof(struct FileInfo, fileName), Type::String, 0},
+    {offsetof(struct FileInfo, size), Type::Int, 0},      {offsetof(struct FileInfo, fileType), Type::String, 0},
+    {offsetof(struct FileInfo, sha256), Type::String, 0}, {offsetof(struct FileInfo, preview), Type::String, 0},
+};
+
+static const StructInfo gFileInfoInfo = {sizeof(FileInfo), dimof(gFileInfoFields), gFileInfoFields,
+                                         "id\0fileName\0size\0fileType\0sha256\0preview\0"};
+
+static const FieldInfo gFileCollectionFields[] = {
+    {offsetof(FileCollection, sessionId), Type::String, 0},
+    {offsetof(FileCollection, files), Type::MapStruct, (intptr_t)&gFileInfoInfo},
+};
+
+static const StructInfo gFileCollectionInfo = {sizeof(FileCollection), dimof(gFileCollectionFields),
+                                               gFileCollectionFields, "sessionId\0files\0"};
+
+void TestJsonMap() {
+    printf("测试把json 反序列化为StrVecWithData<FileInfo>结构体\n-------------------------\n");
+
+    const char* jsonData = R"({"sessionId": "abc-123-cde",
+    "files": {
+        "文件ID1": {
+            "id": "文件ID1",
+            "fileName": "images/sample-0.jpg",
+            "size": 322817,
+            "fileType": "image/jpeg",
+            "sha256": null,
+            "preview": null
+        },
+        "文件ID2": {
+            "id": "文件ID2",
+            "fileName": "images/sample-1.jpg",
+            "size": 839937,
+            "fileType": "image/jpeg",
+            "sha256": null,
+            "preview": null
+        }
+    }})";
+
+    FileCollection* data = (FileCollection*)Deserialize(&gFileCollectionInfo, Str(jsonData));
+
+    // gReducedLogging = true;
+    // gLogToDebugger = true;
+    // gLogToConsole = true;
+    // 遍历结果
+    printf("sessionId: %s\n", data->sessionId.s);
+    for (auto [k, v] : data->files.keys) {
+        Str fileId = k;                                  // 键：动态文件ID
+        FileInfo* fi = (FileInfo*)data->files.values[v]; // 值：FileInfo 结构体
+        // logf("upload info %s: id=%s, fileName=%s, size=%lld\n", fileId, fi->id, fi->fileName, fi->size);
+        printf("upload info %s: id=%s, fileName=%s, size=%d\n", fileId.s, fi->id.s, fi->fileName.s, fi->size);
+    }
+    // gLogToConsole = false;
+
+    Free(&gFileCollectionInfo, data);
+}
+
+struct Info {
+    Str name;
+    int version = 0;
+};
+
+struct HostConfig {
+    int port = 0;
+    bool useTls = false;
+};
+
+struct IpInfo {
+    Info info;
+    MapRaw ipPool;
+};
+
+// --- info 的元数据 ---
+static const FieldInfo gInfoFields[] = {
+    {offsetof(struct Info, name), Type::String, 0},
+    {offsetof(struct Info, version), Type::Int, 0},
+};
+static const StructInfo gInfoInfo = {sizeof(struct Info), 2, gInfoFields, "name\0version\0"};
+
+static const FieldInfo gHostConfigFields[] = {
+    {offsetof(HostConfig, port), Type::Int, 0},
+    {offsetof(HostConfig, useTls), Type::Bool, 0},
+};
+static const StructInfo gHostConfigInfo = {sizeof(HostConfig), 2, gHostConfigFields, "port\0useTls\0"};
+
+static const FieldInfo gIpInfoFields[] = {
+    {offsetof(IpInfo, info), Type::Struct, (intptr_t)&gInfoInfo},
+    {offsetof(IpInfo, ipPool), Type::MapStruct, (intptr_t)&gHostConfigInfo},
+};
+
+static const StructInfo gIpInfoInfo = {sizeof(struct IpInfo), 2, gIpInfoFields, "info\0ipPool\0"};
+
+struct Wife {
+    Str name;
+    int age;
+    MapStructArrayRaw info;
+};
+
+struct Human {
+    Str name;
+    int age;
+    Str sex;
+};
+
+struct Persion {
+    Str name;
+    Vec<int>* ages;
+    Vec<Wife*>* wifes;
+    MapArrayRaw house;
+};
+
+static const FieldInfo gHumanFields[] = {
+    {offsetof(Human, name), Type::String, 0},
+    {offsetof(Human, age), Type::Int, 0},
+    {offsetof(Human, sex), Type::String, (intptr_t)"Male"},
+};
+
+static const StructInfo gHumanInfo = {sizeof(Human), dimof(gHumanFields), gHumanFields, "name\0age\0sex\0"};
+
+static const FieldInfo gWifeFields[] = {
+    {offsetof(Wife, name), Type::String, 0},
+    {offsetof(Wife, age), Type::Int, 0},
+    {offsetof(Wife, info), Type::MapStructArray, (intptr_t)&gHumanInfo},
+};
+
+static const StructInfo gWifeInfo = {sizeof(Wife), dimof(gWifeFields), gWifeFields, "name\0age\0info\0"};
+
+static const FieldInfo gPersionField[] = {
+    {offsetof(Persion, name), Type::String, 0},
+    {offsetof(Persion, ages), Type::IntArray, 0},
+    {offsetof(Persion, wifes), Type::StructArray, (intptr_t)&gWifeInfo},
+    {offsetof(Persion, house), Type::MapStringArray, 0},
+};
+
+static const StructInfo gPersionInfo = {sizeof(Persion), dimof(gPersionField), gPersionField,
+                                        "name\0ages\0wifes\0house\0"};
+
+void TestNestMap() {
+    printf("测试嵌套Map\n--------------------------\n");
+    Persion* p = (Persion*)Deserialize(&gPersionInfo, demo);
+    auto s = p->house.values;
+    for (auto [k, v] : p->house.keys) {
+        auto vec = (Vec<Str>*)s[v];
+        for (int i = 0; i < len(*vec); i++) printf("House->%s: %s\n", k.s, ((*vec)[i]).s);
+    }
+
+    auto a = p->ages;
+    printf("Ages: ");
+    for (int i = 0; i < len(*a); i++) printf("%d ", (*a)[i]);
+    printf("\n");
+    auto w = p->wifes;
+    for (int i = 0; i < len(*w); i++) {
+        auto ws = (*w)[i];
+        printf("wife: %s, age: %d, ", ws->name.s, ws->age);
+        auto info = ws->info.values;
+        printf("info: \n");
+        for (auto [k, v] : ws->info.keys) {
+            printf("\t%s: \n", k.s);
+            auto infoValue = (Vec<Human*>*)ws->info.values[v];
+            for (int j = 0; j < len(*infoValue); j++) {
+                auto h = (*infoValue)[j];
+                printf("\t\tname: %s, age: %d, sex: %s\n", h->name.s, h->age, h->sex.s);
+            }
+        }
+    }
+
+    Free(&gPersionInfo, p);
+}
+void TestIpInfo() {
+    TestJsonDeserializer();
+    TestNestMap();
+
+    printf("测试字典迭代\n--------------------------\n");
+    dict::MapStrToInt m;
+    m.Insert(StrL("foo"), 1);
+    m.Insert(StrL("bar"), 2);
+    m.Insert(StrL("haha"), 3);
+
+    for (auto [key, val] : m) {
+        printf("%s = %d\n", key.s, val);
+        if (str::Eq(key, StrL("haha"))) {
+            break; // early-break
+        }
+    }
+
+    printf("测试使用反序列化(ip)\n--------------------------\n");
+    const char* ipinfo = R"(
+        {
+          "info": { "name": "cluster-1", "version": 2 },
+          "ipPool": {
+            "192.168.1.1": { "port": 8080, "useTls": true},
+            "192.168.1.2": { "port": 8081, "useTls": false}
+          }
+        }
+    )";
+
+    IpInfo* out = (IpInfo*)Deserialize(&gIpInfoInfo, Str(ipinfo));
+
+    printf("ip info: name=%s, version=%d\n", out->info.name.s, out->info.version);
+    // 采用平行数组，遍历效率更高（在N<1000时）
+    // for (int i = 0; i < len(out->ipPool.keys); i++) {
+    //     Str ip = out->ipPool.keys[i];
+    //     HostConfig* serverInfo = (HostConfig*)out->ipPool.values[i];
+    //     printf("server Info: ip=%s, port=%d, useTls=%s\n", ip.s, serverInfo->port,
+    //            serverInfo->useTls ? "true" : "false");
+    // }
+    for (auto [k, v] : out->ipPool.keys) {
+        Str ip = k;
+        HostConfig* serverInfo = (HostConfig*)out->ipPool.values[v];
+        printf("server Info: ip=%s, port=%d, useTls=%s\n", ip.s, serverInfo->port,
+               serverInfo->useTls ? "true" : "false");
+    }
+
+    Free(&gIpInfoInfo, out);
+
+    TestJsonMap();
 }

@@ -83,6 +83,7 @@ TempStr EscapeStrTemp(Str s);
 // path helpers (pattern segments use the same encoding as path nodes)
 bool PathMatch(StrNode* path, Str a = {}, Str b = {}, Str c = {}, Str d = {}, Str e = {}, Str f = {});
 StrNode* PathBuildTemp(Str a, Str b = {}, Str c = {}, Str d = {}, Str e = {}, Str f = {});
+TempStr PathFormatTemp(StrNode* path, bool gLog);
 TempStr PathFormatTemp(StrNode* path);
 StrNode* PathNth(StrNode* path, int n);
 int PathSegIndex(StrNode* seg);

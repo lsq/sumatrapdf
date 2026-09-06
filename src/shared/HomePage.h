@@ -27,11 +27,13 @@ struct UploadTaskData {
     char* serverA;
     int port;
     char* urlA;
-    StrQueue* stopQueue;
+    UploadProgress* progress; // 任务结束后交给 OnUploadFinishedUI
     // UploadProgress* progress; // 指针，独立堆分配
 };
 
-void OnUploadProgress(UploadProgressUIData* ctx, UploadProgress* p);
+void OnUploadProgress(MainWindow* win, UploadProgress* p);
+void HomeTransferDiscardFinished(MainWindow* win);
+void HomeTransferFreeOnWindowDestroy(MainWindow* win);
 void OnUploadFinishedUI(UploadProgressUIData* d);
 bool HomeTransferOnMouseWheel(MainWindow* win, int delta);
 bool HomeTransferVscroll(MainWindow* win, WPARAM wp);

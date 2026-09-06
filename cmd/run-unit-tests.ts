@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { detectVisualStudio2026, runLogged } from "./util";
+import { detectVisualStudio as detectVisualStudio2026, runLogged } from "./util";
 
 const asanDllName = "clang_rt.asan_dynamic-x86_64.dll";
 

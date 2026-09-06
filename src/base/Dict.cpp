@@ -253,4 +253,35 @@ bool MapStrToInt::Get(Str key, int* valOut) const {
     return true;
 }
 
+// finds the first non-empty bucket starting at (and including) idx
+static HashTableEntry* FirstEntryFrom(HashTable* h, int& bucketIdx) {
+    for (; bucketIdx < h->nEntries; bucketIdx++) {
+        if (h->entries[bucketIdx]) {
+            return h->entries[bucketIdx];
+        }
+    }
+    return nullptr;
+}
+
+MapStrToInt::Iterator MapStrToInt::begin() const {
+    int idx = 0;
+    HashTableEntry* e = FirstEntryFrom(h, idx);
+    return Iterator(h, idx, e);
+}
+
+StrIntEntry MapStrToInt::Iterator::operator*() const {
+    return StrIntEntry{KeyAsStr(e->key), (int)e->val};
+}
+
+MapStrToInt::Iterator& MapStrToInt::Iterator::operator++() {
+    if (e->next) {
+        e = e->next;
+        return *this;
+    }
+    // current bucket's chain exhausted, advance to next non-empty bucket
+    bucketIdx++;
+    e = FirstEntryFrom(h, bucketIdx);
+    return *this;
+}
+
 } // namespace dict

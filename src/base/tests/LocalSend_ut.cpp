@@ -61,7 +61,8 @@ void TestHttpPostFile() {
         &hup);
 
     HttpResponse rsp;
-    hc.PostFile(StrL("localhost"), 8880, StrL("/upload"), &header, StrL("./out/image/file1.png"), 4, 64 * 1024, perChunkCb, &rsp);
+    hc.PostFile(StrL("localhost"), 8880, StrL("/upload"), &header, StrL("./out/image/file1.png"), 4, 64 * 1024,
+                perChunkCb, &rsp);
     // HttpResponse rsp = hc.PostFile("localhost", 8880, "/upload", &header, "./out/image/file1.png", 4, 64 * 1024,
     // nullptr);
 
@@ -133,7 +134,7 @@ void TestBuildPrepareUpload(const DeviceInfo* info, const StrVecWithData<FileMet
 
 int TestUploadSession(DeviceInfo* info, const StrVecWithData<FileMetadata*>* fm) {
     int port = kDefaultPort;
-    Str host = str::Dup(StrL("192.168.124.3"));
+    Str host = str::Dup(StrL("192.168.124.27"));
 
     HttpClient http;
 
@@ -175,7 +176,7 @@ int TestUploadSession(DeviceInfo* info, const StrVecWithData<FileMetadata*>* fm)
     printf("Sessione: %s\n", report.sessionId.s);
     for (const auto& f : report.files) {
         printf("  [%-9s] %s%s%s\n", StatusText(f.status), f.fileName.s, str::IsNull(f.detail) ? "" : "  -> ",
-               f.detail.s);
+               str::IsNull(f.detail) ? "" : f.detail.s);
         str::Free(f.detail);
     }
 
@@ -208,8 +209,8 @@ void TestLocalSend() {
     StrVec* paths = &p;
     // paths->Append(str::DupTemp("out/image/file1.Png"));
     // paths->Append(str::DupTemp("out/image/file2.pnG"));
-    paths->Append((StrL("out/image/file1.Png")));
-    paths->Append((StrL("out/image/file2.pnG")));
+    paths->Append((StrL("image/file1.Png")));
+    paths->Append((StrL("image/file2.pnG")));
     // paths->Append(("d:/Backup/Downloads/FlClash-0.8.94-android-arm64-v8a.apk"));
 
     if (paths->IsEmpty()) {

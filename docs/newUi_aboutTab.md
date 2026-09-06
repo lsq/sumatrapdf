@@ -576,3 +576,1012 @@ WCHAR* ToWCStr(const wstr::Builder&);
 
 TempStr ToStrTemp(const str::Builder&);
 ```
+## Q6
+struct JsonStructBuilder {
+    JsonStruct *jsStruct;
+    const StructInfo* rootInfo;
+    u8* rootBase;
+    Str data;
+    Vec<ArraySlot> slots;
+
+    JsonStructBuilder(JsonStruct* strct, Str jsonData) : jsStruct(strct), data(jsonData) {}
+
+    ~JsonStructBuilder() {
+        for (int i = 0; i < len(slots); i++) {
+            str::Free(slots[i].prefix);
+        }
+    }
+
+    // 核心：根据路径找到 (base, StructInfo, fieldIdx)，写入值
+    bool Visit() {
+        // 从根开始递归解析路径
+        json::Parse(data, MkFunc1(+[](JsonStruct* args, json::Value* v) {,VisitPath( args, v);}, jsStruct);
+        return true;
+    }
+
+    void VisitPath(JsonStruct* jt, json::Value* v) {
+ 这段代码MkFunc1为什么会报错“reference to non-static member function must be called”
+### Answer
+This is exactly the pattern the codebase already uses for calling a member function through `json::Parse`: it uses `MkMethod1`, not `MkFunc1`, for member functions:
+
+```cpp
+static bool ParseVerify(Str json, JsonVerifier* v) {
+    return json::Parse(json, MkMethod1<JsonVerifier, json::Value*, &JsonVerifier::OnValue>(v));
+}
+``` sumatrapdf:37-39 
+
+## Why `MkFunc1` + `VisitPath` fails
+
+`json::Parse` expects a `json::VisitFn`, which is just `Func1<Value*>` — `using VisitFn = Func1<Value*>;` — and its signature is `bool Parse(Str data, const VisitFn& onValue);` sumatrapdf:33-35 
+
+`MkFunc1` is meant to wrap a **free/static function pointer** plus a raw user-data pointer:
+
+```cpp
+template <typename T1, typename T2>
+Func1<T2> MkFunc1(void (*fn)(T1*, T2), T1* d) {
+    auto res = Func1<T2>{};
+    using fptr = void (*)(void*, T2);
+    res.fn = (fptr)fn;
+    res.SetData((void*)d, false);
+    return res;
+}
+``` sumatrapdf:786-793 
+
+Its first argument must be a plain `void(*)(T1*, T2)` — i.e. something with **no implicit `this`**. That's exactly why your code writes `+[](JsonStruct* args, json::Value* v) { ... }`: the unary `+` forces the capture-less lambda to decay into a raw function pointer of that type.
+
+But inside that lambda body you call `VisitPath(args, v)`. `VisitPath` is declared as:
+
+```cpp
+void VisitPath(JsonStruct* jt, json::Value* v) {
+```
+
+— a **non-static member function of `JsonStructBuilder`**. Because the lambda is capture-less (required for the `+` conversion to a plain function pointer), it has **no `this`** available. When the compiler performs unqualified name lookup for the bare identifier `VisitPath` inside that lambda, it still finds `JsonStructBuilder::VisitPath` (since the lambda is textually nested inside a `JsonStructBuilder` member function, `Visit()`), but a non-static member function can't be referenced/invoked without binding it to an object first. That's precisely the compiler's complaint: **"reference to non-static member function must be called"** — it's telling you that `VisitPath` names a member function, and you can't just call it like a free function (`VisitPath(args, v)`); it needs an object, e.g. `someObj->VisitPath(...)` or `someObj.VisitPath(...)`.
+
+Additional structural mismatch: even if you fix the qualification, `args` in the lambda is typed `JsonStruct*` (matching the `jsStruct` you pass as `d` to `MkFunc1`), not `JsonStructBuilder*`, and `VisitPath(JsonStruct* jt, json::Value* v)` takes 2 explicit params in addition to the implicit `this` — so there's no `JsonStructBuilder*` instance in scope inside the lambda at all to call `VisitPath` on.
+
+## How the codebase actually solves this
+
+For calling a member function as the visitor callback, use `MkMethod1`, which builds a trampoline that supplies `this` for you:
+
+```cpp
+template <typename T, typename TArg, void (T::*Method)(TArg)>
+static void MethodTrampoline1(void* obj, TArg arg) {
+    (static_cast<T*>(obj)->*Method)(arg);
+}
+
+template <typename T, typename TArg, void (T::*Method)(TArg)>
+Func1<TArg> MkMethod1(T* obj) {
+    auto res = Func1<TArg>{};
+    using fptr = void (*)(void*, TArg);
+    res.fn = (fptr)&MethodTrampoline1<T, TArg, Method>;
+    res.SetData((void*)obj, false);
+    return res;
+}
+``` sumatrapdf:772-784 
+
+Concretely, your `Visit()` should look like:
+
+```cpp
+bool Visit() {
+    return json::Parse(data, MkMethod1<JsonStructBuilder, json::Value*, &JsonStructBuilder::VisitPath>(this));
+}
+```
+
+and `VisitPath` should be a single-argument member function matching `void VisitPath(json::Value* v)` (matching `VisitFn = Func1<Value*>`, which calls `fn(void*, Value*)` — see `JsonVerifier::OnValue(json::Value* v)` used the same way sumatrapdf:27-34 ), not `(JsonStruct*, json::Value*)` as currently declared — `Func1<Value*>` only carries one real argument (`Value*`); the object (`this`) is threaded through `userData`, not as a `JsonStruct*` parameter.
+
+`MkFunc1` (as opposed to `MkMethod1`) is only appropriate when the callback truly is a free/static function taking `(T1*, T2)`, e.g. `CountOnValue(CountState* st, json::Value* v)` used via `MkFunc1(CountOnValue, &countState)` — a pattern also present in the test file. It is not the right tool when the callback body needs to call a non-static member function of the enclosing class.
+### Citations
+**File:** src/base/tests/JsonParser_ut.cpp (L27-34)
+```cpp
+    void OnValue(json::Value* v) {
+        utassert(idx < dataLen);
+        const ExpectedValue& d = data[idx];
+        utassert(v->type == d.type);
+        utassert(str::Eq(json::PathFormatTemp(v->path), d.path));
+        utassert(str::Eq(v->value, d.value));
+        idx++;
+    }
+```
+**File:** src/base/tests/JsonParser_ut.cpp (L37-39)
+```cpp
+static bool ParseVerify(Str json, JsonVerifier* v) {
+    return json::Parse(json, MkMethod1<JsonVerifier, json::Value*, &JsonVerifier::OnValue>(v));
+}
+```
+**File:** src/base/JsonParser.h (L33-35)
+```text
+using VisitFn = Func1<Value*>;
+
+bool Parse(Str data, const VisitFn& onValue);
+```
+**File:** src/base/Base.h (L772-784)
+```text
+template <typename T, typename TArg, void (T::*Method)(TArg)>
+static void MethodTrampoline1(void* obj, TArg arg) {
+    (static_cast<T*>(obj)->*Method)(arg);
+}
+
+template <typename T, typename TArg, void (T::*Method)(TArg)>
+Func1<TArg> MkMethod1(T* obj) {
+    auto res = Func1<TArg>{};
+    using fptr = void (*)(void*, TArg);
+    res.fn = (fptr)&MethodTrampoline1<T, TArg, Method>;
+    res.SetData((void*)obj, false);
+    return res;
+}
+```
+**File:** src/base/Base.h (L786-793)
+```text
+template <typename T1, typename T2>
+Func1<T2> MkFunc1(void (*fn)(T1*, T2), T1* d) {
+    auto res = Func1<T2>{};
+    using fptr = void (*)(void*, T2);
+    res.fn = (fptr)fn;
+    res.SetData((void*)d, false);
+    return res;
+}
+```
+## Q7
+函数内部的printf语句，怎么根据是不是有类似debug的全局变量来打印信息
+### Answer
+代码库里有两种常见做法，可以根据场景选择：
+
+## 方法一：直接用全局 build 标志 `gIsDebugBuild` 做条件判断
+
+`SumatraConfig.h`/`SumatraConfig.cpp` 里定义了几个全局 build 标志：
+
+```cpp
+extern bool gIsDebugBuild;
+extern bool gIsAsanBuild;
+extern bool gIsPreReleaseBuild;
+``` sumatrapdf:8-10 
+
+在函数内部直接判断后再调用 `logf`，比如 `SetCurrentLangByCode()` 里的写法：
+
+```cpp
+if (idx == 0 && !gIsDebugBuild) {
+    // perf: in release builds we skip parsing translations for english
+    // in debug we want to execute this code to catch errors
+    return;
+}
+``` sumatrapdf:193-197 
+
+或者像 `DeleteStaleFilesAsync()` 那样，先整体判断标志，后面的 `logf` 只在满足条件时才会执行到：
+
+```cpp
+if (!(gIsPreReleaseBuild || gIsDebugBuild)) {
+    return;
+}
+...
+logf("DeleteStaleFilesAsync: dataDir: '%s'\n", dataDir);
+``` sumatrapdf:1707-1714 
+
+这种写法最简单：直接 `if (gIsDebugBuild) { logf(...); }`。
+
+## 方法二：为某个模块单独定义一个局部的调试开关变量 + 包装宏
+
+如果你不想用全局的 build 标志，而是想针对某个模块/功能单独开关（比如"只在调试这个 cache 逻辑的时候才打印"），`RenderCache.cpp` 里的做法更贴合你说的"类似 debug 的全局变量"：
+
+```cpp
+// RenderCache's verbose per-operation logging (FreePage / Paint / DropCacheEntry
+// / ...) is noisy, so it's disabled by default. Set gLogRenderCache = true to
+// re-enable it when debugging the cache.
+static bool gLogRenderCache = false;
+#define rcLogf(...)                \
+    do {                           \
+        if (gLogRenderCache) {     \
+            log(fmt(__VA_ARGS__)); \
+        }                          \
+    } while (0)
+``` sumatrapdf:74-83 
+
+调用方式就跟平时用 `logf`/`printf` 一样，只是换成 `rcLogf(...)`；打开调试时只需临时把 `gLogRenderCache` 改成 `true`（注释里甚至给出了在构造函数里临时启用的位置提示）：
+
+```cpp
+RenderCache::RenderCache() : maxTileSize(...) {
+    // enable when debugging RenderCache logic
+    // gEnableDbgLog = true;
+    ...
+``` sumatrapdf:90-92 
+
+## 底层的 `log`/`logf`
+
+两种做法最终都落到统一的日志基础设施：`logf()` 是一个模板函数，内部用 `str::FormatTemp` 格式化后调用 `log()`：
+
+```cpp
+template <typename... TArgs>
+void logf(const char* s, const TArgs&... args) {
+    ::log(str::FormatTemp(s, args...));
+}
+``` sumatrapdf:837-840 
+
+这些日志最终会写入日志文件/控制台，也可以被 Logview 工具（通过命名管道 `\\.\pipe\LOCAL\ArsLexis-Logger`）实时查看，这在 `docs/md/Logview.md` 里有说明 sumatrapdf:13-15 。
+
+## 建议
+
+- 如果你想要的是"debug build 才打印"（编译期区分 Debug/Release），直接用现成的 `gIsDebugBuild`，写法一最简单，不需要新增变量。
+- 如果你想要的是"运行时手动开关某个功能的详细日志"（不区分 build 类型，方便临时调试某个具体模块），推荐照抄 `RenderCache.cpp` 的 `gLogRenderCache` + `rcLogf` 宏模式：在你的 `.cpp` 顶部加一个 `static bool gLogXxx = false;`，配一个 `#define xxxLogf(...) do { if (gLogXxx) { log(fmt(__VA_ARGS__)); } } while (0)`，然后把函数内的 `printf`/`logf` 换成 `xxxLogf`。这样默认不打印（避免刷屏日志），调试时改一行把 `gLogXxx` 设为 `true` 即可。
+### Citations
+**File:** src/SumatraConfig.h (L8-10)
+```text
+extern bool gIsDebugBuild;
+extern bool gIsAsanBuild;
+extern bool gIsPreReleaseBuild;
+```
+**File:** src/Translations.cpp (L193-197)
+```cpp
+    if (idx == 0 && !gIsDebugBuild) {
+        // perf: in release builds we skip parsing translations for english
+        // in debug we want to execute this code to catch errors
+        return;
+    }
+```
+**File:** src/SumatraStartup.cpp (L1707-1714)
+```cpp
+    if (!(gIsPreReleaseBuild || gIsDebugBuild)) {
+        return;
+    }
+    TempStr dataDir = GetSumatraDataDirTemp();
+    if (!dataDir) {
+        return;
+    }
+    logf("DeleteStaleFilesAsync: dataDir: '%s'\n", dataDir);
+```
+**File:** src/RenderCache.cpp (L74-83)
+```cpp
+// RenderCache's verbose per-operation logging (FreePage / Paint / DropCacheEntry
+// / ...) is noisy, so it's disabled by default. Set gLogRenderCache = true to
+// re-enable it when debugging the cache.
+static bool gLogRenderCache = false;
+#define rcLogf(...)                \
+    do {                           \
+        if (gLogRenderCache) {     \
+            log(fmt(__VA_ARGS__)); \
+        }                          \
+    } while (0)
+```
+**File:** src/RenderCache.cpp (L90-92)
+```cpp
+RenderCache::RenderCache() : maxTileSize({GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)}) {
+    // enable when debugging RenderCache logic
+    // gEnableDbgLog = true;
+```
+**File:** src/base/Base.h (L837-840)
+```text
+template <typename... TArgs>
+void logf(const char* s, const TArgs&... args) {
+    ::log(str::FormatTemp(s, args...));
+}
+```
+**File:** docs/md/Logview.md (L13-15)
+```markdown
+Logview is a generic logging tool that opens a named pipe `\\.\pipe\LOCAL\ArsLexis-Logger` that any application can open and write to.
+
+SumatraPDF uses it for logging (`log()`, `logf()` functions in `Log.h` and `Log.cpp`).
+```
+## Q8
+用已有数据结构怎么实现 real hash map
+### Answer
+`dict::MapStrToInt`(`src/base/Dict.cpp`/`Dict.h`)本身就是用现有基础数据结构拼出来的一个"real hash map"，只是它故意把类型限定成 `Str -> int`，避免模板化带来的代码膨胀。理解它的构造方式，就能照着思路做一个泛型版本。
+
+## 现有的构造 "real hash map" 所依赖的基础组件
+
+1. **`Arena`**（`src/base/Base.h` 中声明的 `ArenaNew()`/`ArenaDelete()`/`AllocArray<T>(a, n)`）——批量分配、统一释放，避免对每个 `HashTableEntry` 单独 `malloc`/`free`。`MapStrToInt` 构造时就是 `a = ArenaNew(); h = NewHashTable(initialSize, a);` sumatrapdf:208-212 ，析构时 `DeleteHashTable(h); ArenaDelete(a);` sumatrapdf:214-217 。
+
+2. **裸的桶数组 + 链式冲突解决**：`HashTable` 结构就是 `HashTableEntry** entries` 数组（大小为 2 的幂）加一个 `freeList`（复用被删除的 entry 节省分配） sumatrapdf:70-87 ，`NewHashTable()` 用 `RoundToPowerOf2` 保证桶数是 2 的幂，用 `AllocArray<HashTableEntry*>(size)` 分配桶数组（注意：桶数组本身**不**用 arena 分配，而是普通堆分配，因为它体积大，resize 时要整体释放重建） sumatrapdf:89-99 。
+
+3. **策略化的哈希/比较——`HasherComparator` 接口**：把"怎么算哈希""怎么判等"抽成一个虚基类接口 `HasherComparator`（`Hash(uintptr_t)`/`Equal(uintptr_t,uintptr_t)`），针对不同 key 类型各写一个实现（`StrKeyHasherComparator` 用 `MurmurHash2`+`str::Eq`，`WStrKeyHasherComparator` 用 `wstr::Eq`） sumatrapdf:35-65 。这样底层的 `HashTable`/`GetOrCreateEntry`/`RemoveEntry`/`HashTableResize` 全部对 key 的具体类型无感知，只操作 `uintptr_t`，从而**不需要模板**就能支持多种 key 类型（作者在文件头注释里明确说明了这个设计取舍：避免模板化带来的"code bloat and awful syntax" sumatrapdf:4-16 ）。
+
+4. **核心三个操作**都建立在这个通用 `HashTable` 之上：
+   - `GetOrCreateEntry()`：按 `hash % nEntries` 定位桶，链表内线性比较找到已存在的 entry；若不存在且允许创建（`a != nullptr`），从 `freeList` 或 arena 分配新 entry 并挂到链表头 sumatrapdf:144-174 。
+   - `RemoveEntry()`：找到 entry 后从链表中摘除，放回 `freeList` 供复用（而不是真正释放内存） sumatrapdf:176-206 。
+   - `HashTableResize()` + `HashTableResizeIfNeeded()`：负载因子超过 150%（借用了 redis 同款策略，用链式冲突可以容忍超过 100% 的负载）就整体 rehash 到下一个 2 的幂大小 sumatrapdf:106-141 。
+
+5. **类型安全的外层包装** `MapStrToInt`：真正的"map"只是在这个通用无类型 `HashTable` 外面包一层，把 `Str`/`int` 编解码成 `uintptr_t`（`(uintptr_t)CStrTemp(key)`、`(intptr_t)val`），并在插入新 key 时用 `str::Dup(a, key)` 把 key 复制一份"驻留"进 arena，保证 entry 里存的指针在 map 生命周期内始终有效 sumatrapdf:232-255 。`Get`/`Remove` 同理，只是不创建新 entry sumatrapdf:257-281 。
+
+## 如果要用现有数据结构自己实现一个新的（泛型）hash map
+
+按照上面同样的模式，你有两条可行路径：
+
+**路径 A：直接复用 `dict::HashTable` 这套底层机制，只加一个新的 `HasherComparator` 子类**
+如果 key 类型可以自然编码成 `uintptr_t`（指针、interned 字符串、整数等），最省事的做法就是：写一个新的 `XxxKeyHasherComparator : public HasherComparator`，再仿照 `MapStrToInt` 写一个 `MapXxxToYyy` 包装类（构造 `Arena`+`HashTable`，`Insert`/`Get`/`Remove` 分别调用 `GetOrCreateEntry`/`RemoveEntry`）。这是**改动最小、风格最一致**的方案，不用改动 `Dict.cpp` 底层任何一行。
+
+**路径 B：用 `Vec<T>` 自己写一个"开放地址（open addressing）"或"桶+链表"的模板化 hash map**
+如果你想要一个真正模板化、能存任意 `K/V` 组合的 map，可以直接用 `Vec<T>`（`src/base/Vec.h`）当桶数组的底层存储，例如 `Vec<Entry<K,V>>` 作为开放地址表（类似 `hb_hashmap_t` 在 `ext/harfbuzz/src/hb-map.hh` 里的做法：单一扁平数组 + `is_used`/`is_real` 标记位表示"空/删除/占用"三态，探测方式是线性探测 `i = (i + ++step) & mask`） sumatrapdf:248-272 。`Vec<T>` 已经提供了 `Reset()`/`Clear()`/`FreeEls()`/`VecReserve()`/`VecInsertSpace()` 这些内存管理原语 sumatrapdf:27-59 ，可以直接拿来管理你自己的桶数组，不需要重新写内存分配/扩容逻辑。
+
+两条路径的取舍：
+- 路径 A 与代码库既有风格（`dict` 命名空间，非模板化，故意避免模板膨胀）完全一致，适合往 `src/base/Dict.h`/`Dict.cpp` 里新增一种 map 类型。
+- 路径 B 更像 `hb_hashmap_t` 的现代模板化开放地址实现，性能通常优于链式（缓存局部性更好），但需要自己处理 tombstone（墓碑）删除标记、rehash 时的搬移逻辑，工作量比路径 A 大。
+
+如果你能说明具体要支持的 key/value 类型，我可以进一步给出更贴合你需求的具体设计（比如是否要模板化、是否要支持自定义 hash 函数等）。
+### Citations
+**File:** src/base/Dict.cpp (L4-16)
+```cpp
+/* This is a dictionary with intentionally unorthodox design.
+It's called dictionary, not a hashtable, to emphasize it's
+about the API, not implementation technique.
+Currently it's imlemented on top of a hash table, but it could
+just as well be a tree of some kind.
+
+Usually those things are done as a templated hash table class,
+but I want to avoid code bloat and awful syntax.
+
+The classes are based on a generic, untyped uintptr => uintptr
+hash table. The actual dict class is a wrapper that provides
+a type-safe API and handles policy decisions like allocations
+(if they are necessary).
+```
+**File:** src/base/Dict.cpp (L35-65)
+```cpp
+class HasherComparator {
+  public:
+    virtual size_t Hash(uintptr_t key) = 0;
+    virtual bool Equal(uintptr_t k1, uintptr_t k2) = 0;
+    virtual ~HasherComparator() = default;
+};
+
+static Str KeyAsStr(uintptr_t key) {
+    // interned hash table keys are NUL-terminated
+    return Str((char*)key);
+}
+
+static WStr KeyAsWStr(uintptr_t key) {
+    return WStr((wchar_t*)key);
+}
+
+class StrKeyHasherComparator : public HasherComparator {
+    size_t Hash(uintptr_t key) override {
+        Str s = KeyAsStr(key);
+        return MurmurHash2(s);
+    }
+    bool Equal(uintptr_t k1, uintptr_t k2) override { return str::Eq(KeyAsStr(k1), KeyAsStr(k2)); }
+};
+
+class WStrKeyHasherComparator : public HasherComparator {
+    size_t Hash(uintptr_t key) override {
+        WStr s = KeyAsWStr(key);
+        return MurmurHash2(s);
+    }
+    bool Equal(uintptr_t k1, uintptr_t k2) override { return wstr::Eq(KeyAsWStr(k1), KeyAsWStr(k2)); }
+};
+```
+**File:** src/base/Dict.cpp (L70-87)
+```cpp
+struct HashTableEntry {
+    uintptr_t key;
+    uintptr_t val;
+    struct HashTableEntry* next;
+};
+
+// not a class so that it can be allocated with an allocator
+struct HashTable {
+    HashTableEntry** entries;
+    HashTableEntry* freeList;
+
+    int nEntries;
+    int nUsed; // total number of inserted entries
+
+    // for debugging
+    int nResizes;
+    int nCollisions;
+};
+```
+**File:** src/base/Dict.cpp (L89-99)
+```cpp
+static HashTable* NewHashTable(int size, Arena* a) {
+    ReportIf(!a); // we'll leak otherwise
+    HashTable* h = AllocArray<HashTable>(a, 1);
+    // number of hash table entries should be power of 2
+    size = RoundToPowerOf2(size);
+    // entries are not allocated with the arena since those are large blocks
+    // and we don't want to waste their memory after
+    h->entries = AllocArray<HashTableEntry*>(size);
+    h->nEntries = size;
+    return h;
+}
+```
+**File:** src/base/Dict.cpp (L106-141)
+```cpp
+static void HashTableResize(HashTable* h, HasherComparator* hc) {
+    int newSize = RoundToPowerOf2(h->nEntries + 1);
+    ReportIf(newSize <= h->nEntries);
+    HashTableEntry** newEntries = AllocArray<HashTableEntry*>(newSize);
+    HashTableEntry *e, *next;
+    size_t hash;
+    int pos;
+    for (int i = 0; i < h->nEntries; i++) {
+        e = h->entries[i];
+        while (e) {
+            next = e->next;
+            hash = hc->Hash(e->key);
+            pos = (int)(hash % (size_t)newSize);
+            e->next = newEntries[pos];
+            newEntries[pos] = e;
+            e = next;
+        }
+    }
+    free((void*)h->entries);
+    h->entries = newEntries;
+    h->nEntries = newSize;
+    h->nResizes += 1;
+
+    ReportIf(h->nUsed >= (h->nEntries * 3) / 2);
+}
+
+// micro optimization: this is called often, so we want this check inlined. Resizing logic
+// is called rarely, so doesn't need to be inlined
+static inline void HashTableResizeIfNeeded(HashTable* h, HasherComparator* hc) {
+    // per http://stackoverflow.com/questions/1603712/when-should-i-do-rehashing-of-entire-hash-table/1604428#1604428
+    // when using collision chaining, load factor can be 150%
+    if (h->nUsed < (h->nEntries * 3) / 2) {
+        return;
+    }
+    HashTableResize(h, hc);
+}
+```
+**File:** src/base/Dict.cpp (L144-174)
+```cpp
+static HashTableEntry* GetOrCreateEntry(HashTable* h, HasherComparator* hc, uintptr_t key, Arena* a, bool& newEntry) {
+    bool shouldCreate = (a != nullptr);
+    size_t hash = hc->Hash(key);
+    int pos = (int)(hash % (size_t)h->nEntries);
+    HashTableEntry* e = h->entries[pos];
+    newEntry = false;
+    while (e) {
+        if (hc->Equal(key, e->key)) {
+            return e;
+        }
+        e = e->next;
+    }
+    if (!shouldCreate) {
+        return nullptr;
+    }
+
+    if (h->freeList) {
+        e = h->freeList;
+        h->freeList = h->freeList->next;
+    } else {
+        e = AllocArray<HashTableEntry>(a, 1);
+    }
+    e->next = h->entries[pos];
+    h->entries[pos] = e;
+    h->nUsed++;
+    if (e->next != nullptr) {
+        h->nCollisions++;
+    }
+    newEntry = true;
+    return e;
+}
+```
+**File:** src/base/Dict.cpp (L176-206)
+```cpp
+static bool RemoveEntry(HashTable* h, HasherComparator* hc, uintptr_t key, uintptr_t* removedValOut) {
+    size_t hash = hc->Hash(key);
+    int pos = (int)(hash % (size_t)h->nEntries);
+    HashTableEntry* e = h->entries[pos];
+    while (e) {
+        if (hc->Equal(key, e->key)) {
+            break;
+        }
+        e = e->next;
+    }
+    if (!e) {
+        return false;
+    }
+
+    // remove the the entry from the list
+    HashTableEntry* e2 = h->entries[pos];
+    if (e2 == e) {
+        h->entries[pos] = e->next;
+    } else {
+        while (e2->next != e) {
+            e2 = e2->next;
+        }
+        e2->next = e->next;
+    }
+    e->next = h->freeList;
+    h->freeList = e;
+    *removedValOut = e->val;
+    ReportIf(0 == h->nUsed);
+    h->nUsed -= 1;
+    return true;
+}
+```
+**File:** src/base/Dict.cpp (L208-212)
+```cpp
+MapStrToInt::MapStrToInt(int initialSize) {
+    // arena-allocate HashTableEntry entries and copies of string keys
+    a = ArenaNew();
+    h = NewHashTable(initialSize, a);
+}
+```
+**File:** src/base/Dict.cpp (L214-217)
+```cpp
+MapStrToInt::~MapStrToInt() {
+    DeleteHashTable(h);
+    ArenaDelete(a);
+}
+```
+**File:** src/base/Dict.cpp (L232-255)
+```cpp
+bool MapStrToInt::Insert(Str key, int val, int* existingValOut, Str* existingKeyOut) {
+    if (len(key) == 0) {
+        return false;
+    }
+    bool newEntry;
+    HashTableEntry* e = GetOrCreateEntry(h, &gStrKeyHasherComparator, (uintptr_t)CStrTemp(key), a, newEntry);
+    if (!newEntry) {
+        if (existingValOut) {
+            *existingValOut = (int)e->val;
+        }
+        if (existingKeyOut) {
+            *existingKeyOut = KeyAsStr(e->key);
+        }
+        return false;
+    }
+    e->key = (intptr_t)str::Dup(a, key).s;
+    e->val = (intptr_t)val;
+    if (existingKeyOut) {
+        *existingKeyOut = KeyAsStr(e->key);
+    }
+
+    HashTableResizeIfNeeded(h, &gStrKeyHasherComparator);
+    return true;
+}
+```
+**File:** src/base/Dict.cpp (L257-281)
+```cpp
+bool MapStrToInt::Remove(Str key, int* removedValOut) const {
+    if (len(key) == 0) {
+        return false;
+    }
+    uintptr_t removedVal;
+    bool removed = RemoveEntry(h, &gStrKeyHasherComparator, (uintptr_t)CStrTemp(key), &removedVal);
+    if (removed && removedValOut) {
+        *removedValOut = (int)removedVal;
+    }
+    return removed;
+}
+
+bool MapStrToInt::Get(Str key, int* valOut) const {
+    if (len(key) == 0) {
+        return false;
+    }
+    StrKeyHasherComparator hc;
+    bool newEntry;
+    HashTableEntry* e = GetOrCreateEntry(h, &hc, (uintptr_t)CStrTemp(key), nullptr, newEntry);
+    if (!e) {
+        return false;
+    }
+    *valOut = (int)e->val;
+    return true;
+}
+```
+**File:** ext/harfbuzz/src/hb-map.hh (L248-272)
+```text
+  bool set_with_hash (KK&& key, uint32_t hash, VV&& value, bool overwrite = true)
+  {
+    if (unlikely (!successful)) return false;
+    if (unlikely ((occupancy + occupancy / 2) >= mask && !alloc ())) return false;
+
+    hash &= 0x3FFFFFFF; // We only store lower 30bit of hash
+    unsigned int tombstone = (unsigned int) -1;
+    unsigned int i = hash % prime;
+    unsigned length = 0;
+    unsigned step = 0;
+    while (items[i].is_used ())
+    {
+      if ((std::is_integral<K>::value || items[i].hash == hash) &&
+	  items[i] == key)
+      {
+        if (!overwrite)
+	  return false;
+        else
+	  break;
+      }
+      if (!items[i].is_real () && tombstone == (unsigned) -1)
+        tombstone = i;
+      i = (i + ++step) & mask;
+      length++;
+    }
+```
+**File:** src/base/Vec.h (L27-59)
+```text
+template <typename T>
+struct Vec {
+    int len = 0;
+    int cap = 0;
+    T* els = nullptr;
+
+    // We always pad the elements with a single 0 value. This makes
+    // Vec<char> and Vec<WCHAR> a C-compatible string. Although it's
+    // not useful for other types, the code is simpler if we always do it
+    // (rather than have it an optional behavior).
+
+    void FreeEls() {
+        if (els) {
+            Free(nullptr, (void*)els);
+            els = nullptr;
+        }
+    }
+
+    // resets to initial state, freeing memory
+    void Reset() {
+        FreeEls();
+        len = 0;
+        cap = 0;
+    }
+
+    // use to empty but don't free els
+    // for efficient reuse
+    void Clear() {
+        len = 0;
+        if (els && cap > 0) {
+            memset((void*)els, 0, (size_t)cap * sizeof(T));
+        }
+    }
+```
+## Q9
+MapStrToInt怎么迭代keys
+### Answer
+`MapStrToInt` 目前**没有**公开的迭代接口——其 `Dict.h` 里声明的公开方法只有 `Count()`/`Insert()`/`Remove()`/`Get()`，没有 `Keys()`/`ForEach()`/迭代器之类的东西:
+
+```cpp
+class MapStrToInt {
+  public:
+    Arena* a = nullptr;
+    HashTable* h = nullptr;
+
+    explicit MapStrToInt(int initialSize = kHashTableInitialSize);
+    ~MapStrToInt();
+
+    int Count() const;
+    bool Insert(Str key, int val, int* existingValOut = nullptr, Str* existingKeyOut = nullptr);
+    bool Remove(Str key, int* removedValOut) const;
+    bool Get(Str key, int* valOut) const;
+};
+``` sumatrapdf:19-33 
+
+## 为什么不能从外部直接遍历
+
+`MapStrToInt` 的成员 `h` 是 `HashTable*`，但 `HashTable` 在 `Dict.h` 里只是前置声明 `struct HashTable;` sumatrapdf:6-6 ，其真正的字段定义（`entries`、`nEntries`、`freeList` 等）只在 `Dict.cpp` 内部可见：
+
+```cpp
+struct HashTable {
+    HashTableEntry** entries;
+    HashTableEntry* freeList;
+    int nEntries;
+    int nUsed;
+    int nResizes;
+    int nCollisions;
+};
+``` sumatrapdf:77-87 
+
+所以即使 `MapStrToInt::h` 是 public 成员，外部代码也拿不到 `HashTable` 的完整类型定义，无法直接访问 `h->entries` 数组去遍历——这是一个 opaque pointer（不完整类型）。测试文件 `Dict_ut.cpp` 里为了验证 `Insert`/`Remove`/`Get` 的正确性，也是自己另外维护一个 `StrVec toRemove` 来记录插入过的 key，而不是从 `MapStrToInt` 本身遍历出 key 列表 sumatrapdf:59-76 。
+
+## 结论：要迭代 keys，需要给 `MapStrToInt`/`HashTable` 新增一个遍历方法
+
+现有数据结构本身不支持迭代，如果需要这个能力，得在 `Dict.cpp` 内部新增一个函数（因为只有 `.cpp` 里能看到 `HashTable`/`HashTableEntry` 的完整定义），类似：
+
+```cpp
+// 在 Dict.cpp 中新增
+static void HashTableForEach(HashTable* h, const std::function<void(HashTableEntry*)>& fn) {
+    for (int i = 0; i < h->nEntries; i++) {
+        for (HashTableEntry* e = h->entries[i]; e; e = e->next) {
+            fn(e);
+        }
+    }
+}
+```
+
+再在 `MapStrToInt` 上加一个包装方法（在 `Dict.h` 声明、`Dict.cpp` 实现），比如：
+
+```cpp
+// Dict.h
+void MapStrToInt::ForEach(const std::function<void(Str key, int val)>& fn) const;
+
+// Dict.cpp
+void MapStrToInt::ForEach(const std::function<void(Str key, int val)>& fn) const {
+    HashTableForEach(h, [&](HashTableEntry* e) {
+        fn(KeyAsStr(e->key), (int)e->val);
+    });
+}
+```
+
+这里复用了已有的 `KeyAsStr()` 辅助函数（把 `uintptr_t` key 解释成 NUL-结尾字符串），它已经在 `Insert`/`Get` 等函数里用于同样的解码 sumatrapdf:41-43 。
+
+需要注意几点约束：
+- 遍历顺序是桶数组下标顺序 + 链表顺序，不保证插入顺序，也不保证稳定（`HashTableResize` 会重新分桶，顺序在 resize 前后会变化）。
+- 遍历期间不要调用 `Insert`（可能触发 resize，导致 `entries` 数组被整体释放重建，正在遍历的指针失效）；`Remove` 当前 entry 本身（放回 `freeList`）通常安全，但要小心不要移动/重排链表指针后继续用旧的 `next`。
+- 如果你只是想临时调试查看内容，也可以不新增正式 API，而是在 `Dict.cpp` 内部临时写一个遍历函数验证后再决定是否要作为正式接口保留。
+
+如果你需要的话，我可以给出更完整的 `ForEach`/迭代器设计（比如是否要支持 early-break、是否要做成真正的 C++ 迭代器以配合 `for (auto& [k,v] : map)` 语法），但目前代码库里没有现成实现，需要新增。
+### Citations
+**File:** src/base/Dict.h (L6-6)
+```text
+struct HashTable;
+```
+**File:** src/base/Dict.h (L19-33)
+```text
+class MapStrToInt {
+  public:
+    Arena* a = nullptr;
+    HashTable* h = nullptr;
+
+    explicit MapStrToInt(int initialSize = kHashTableInitialSize);
+    ~MapStrToInt();
+
+    int Count() const;
+
+    bool Insert(Str key, int val, int* existingValOut = nullptr, Str* existingKeyOut = nullptr);
+
+    bool Remove(Str key, int* removedValOut) const;
+    bool Get(Str key, int* valOut) const;
+};
+```
+**File:** src/base/Dict.cpp (L41-43)
+```cpp
+
+static Str KeyAsStr(uintptr_t key) {
+    // interned hash table keys are NUL-terminated
+```
+**File:** src/base/Dict.cpp (L77-87)
+```cpp
+struct HashTable {
+    HashTableEntry** entries;
+    HashTableEntry* freeList;
+
+    int nEntries;
+    int nUsed; // total number of inserted entries
+
+    // for debugging
+    int nResizes;
+    int nCollisions;
+};
+```
+**File:** src/base/tests/Dict_ut.cpp (L59-76)
+```cpp
+    srand((unsigned int)time(nullptr));
+    StrVec toRemove;
+    for (int i = 0; i < 1024; i++) {
+        Str k = GenRandomString();
+        ok = d.Insert(k, i, nullptr);
+        // no guarantee that the string is unique, so Insert() doesn't always succeeds
+        if (!ok) continue;
+        toRemove.Append(str::Dup(k));
+        utassert(len(toRemove) == d.Count());
+        ok = d.Get(k, &val);
+        ReportIf(!ok);
+        ReportIf(i != val);
+    }
+    for (int i = 0; i < len(toRemove); i++) {
+        Str k = toRemove[i];
+        ok = d.Remove(k, nullptr);
+        utassert(ok);
+    }
+```
+## Q10
+给出更完整的 ForEach/迭代器设计，支持 early-break、做成真正的 C++ 迭代器以配合 for (auto& [k,v] : map) 语法
+### Answer
+代码里其实早就留了这个 TODO——注释里明确写着 `// TODO:\n// - add iterator for keys/values` sumatrapdf:23-24 ，说明作者本来就打算加但还没做。下面给出一个可以直接落地、支持 `for (auto [k, v] : map)` 和 early-break 的设计。
+
+## 设计要点
+
+1. **迭代器必须能跳过空桶**——底层是 `entries[nEntries]` 数组 + 每个桶一条链表 sumatrapdf:77-87 ，大部分桶可能是空指针，所以 `operator++` 逻辑是"先沿当前链表走 `next`，链表走完了就跳到下一个非空桶"。
+2. **要支持 range-for `for (auto& [k, v] : map)`**，需要给 `MapStrToInt` 添加 `begin()`/`end()`，并让 `operator*` 返回一个包含 `key`/`val` 的小结构体（用结构化绑定）。
+3. **要支持 early-break**（`break;`/`return;` 提前退出循环），这一点标准的 `for (auto& x : container)` 天然就支持——只要迭代器满足基本的前向迭代器要求（`operator!=`、`operator++`、`operator*`），不需要额外设计；不需要像"visitor + callback"模式那样额外传 `bool` 返回值来表示"停止"。这也是为什么应该做成真正的迭代器，而不是 `ForEach(std::function<...>)` 回调式接口——回调式接口如果要支持 early-break，还要人为约定"回调返回 false 就停止"，多一层复杂度。
+4. **`HashTableEntry`/`HashTable` 是定义在 `Dict.cpp` 内部的不完整类型** sumatrapdf:6-6 ，迭代器如果要暴露给 `Dict.h`（这样外部代码才能写 `for (auto& kv : map)`），迭代器类本身也必须放进 `Dict.h`，但它内部持有的 `HashTableEntry*` 只能作为不透明指针使用（`struct HashTableEntry;` 前置声明），实际解引用逻辑（比如 `KeyAsStr`）还是要通过在 `Dict.cpp` 里实现的非 inline 成员函数完成。
+
+## 具体设计
+
+**`Dict.h` 新增内容：**
+
+```cpp
+namespace dict {
+
+struct HashTable;
+struct HashTableEntry; // opaque, defined in Dict.cpp
+
+// value returned by dereferencing MapStrToInt::Iterator
+struct StrIntEntry {
+    Str key;
+    int val;
+};
+
+class MapStrToInt {
+  public:
+    Arena* a = nullptr;
+    HashTable* h = nullptr;
+
+    explicit MapStrToInt(int initialSize = kHashTableInitialSize);
+    ~MapStrToInt();
+
+    int Count() const;
+    bool Insert(Str key, int val, int* existingValOut = nullptr, Str* existingKeyOut = nullptr);
+    bool Remove(Str key, int* removedValOut) const;
+    bool Get(Str key, int* valOut) const;
+
+    // --- iteration support ---
+    class Iterator {
+      public:
+        Iterator() = default; // sentinel / end()
+        Iterator(HashTable* h, int bucketIdx, HashTableEntry* e) : h(h), bucketIdx(bucketIdx), e(e) {}
+
+        StrIntEntry operator*() const;      // implemented in Dict.cpp (needs HashTableEntry layout)
+        Iterator& operator++();             // implemented in Dict.cpp
+        bool operator!=(const Iterator& other) const { return e != other.e; }
+        bool operator==(const Iterator& other) const { return e == other.e; }
+
+      private:
+        HashTable* h = nullptr;
+        int bucketIdx = -1;
+        HashTableEntry* e = nullptr;
+    };
+
+    Iterator begin() const;
+    Iterator end() const { return Iterator(); }
+};
+
+} // namespace dict
+```
+
+**`Dict.cpp` 新增实现**（复用已有的 `KeyAsStr` 辅助函数 sumatrapdf:42-45 ）：
+
+```cpp
+// finds the first non-empty bucket starting at (and including) idx
+static HashTableEntry* FirstEntryFrom(HashTable* h, int& bucketIdx) {
+    for (; bucketIdx < h->nEntries; bucketIdx++) {
+        if (h->entries[bucketIdx]) {
+            return h->entries[bucketIdx];
+        }
+    }
+    return nullptr;
+}
+
+MapStrToInt::Iterator MapStrToInt::begin() const {
+    int idx = 0;
+    HashTableEntry* e = FirstEntryFrom(h, idx);
+    return Iterator(h, idx, e);
+}
+
+StrIntEntry MapStrToInt::Iterator::operator*() const {
+    return StrIntEntry{KeyAsStr(e->key), (int)e->val};
+}
+
+MapStrToInt::Iterator& MapStrToInt::Iterator::operator++() {
+    if (e->next) {
+        e = e->next;
+        return *this;
+    }
+    // current bucket's chain exhausted, advance to next non-empty bucket
+    bucketIdx++;
+    e = FirstEntryFrom(h, bucketIdx);
+    return *this;
+}
+```
+
+## 用法
+
+```cpp
+dict::MapStrToInt m;
+m.Insert("foo", 1);
+m.Insert("bar", 2);
+
+for (auto [key, val] : m) {
+    logf("%s = %d\n", key.CStr(), val);
+    if (str::Eq(key, "bar")) {
+        break; // early-break 天然可用，无需额外设计
+    }
+}
+```
+
+（这里假定 `Str` 有类似 `CStr()`/隐式转换到 `const char*` 的方法用于打印；具体用哪个转换函数取决于 `Str` 的现有 API，可以按需替换成 `str::Dup`/已有的格式化函数。）
+
+## 需要注意的限制/权衡
+
+- **不保证顺序**：遍历顺序是桶下标顺序 + 链表插入顺序（新 entry 插入链表头），不是插入 map 的顺序，且 `HashTableResize()` 会整体 rehash 到新的桶数组 sumatrapdf:106-130 ，同一个 key 在 resize 前后落在哪个桶会变，因此**遍历期间绝对不能调用 `Insert`**（可能触发 resize，`h->entries` 指针被 `free` 重建，迭代器里缓存的 `bucketIdx`/`e` 立刻悬空）。
+- **遍历期间调用 `Remove` 当前正在访问的 entry 是不安全的**：`RemoveEntry()` 会把该 entry 挂回 `freeList` 并修改链表指针 sumatrapdf:176-206 ，而 `operator++` 依赖 `e->next` 才能找到下一个元素——如果 `e` 已经被 `Remove`，其 `next` 已经被改写指向 `freeList` 而不是原链表中的下一个元素，会导致遍历错乱或跳过元素。如果要支持"遍历中删除"，需要在 `operator++` 之前先保存 `next` 指针，或者给 `Iterator` 提供一个 `EraseAndAdvance()`方法，内部先记录 `next`、再调用 `RemoveEntry`、再继续。当前设计**不支持**遍历中删除，只支持只读遍历 + early-break。
+- **`operator*` 返回值是拷贝（`StrIntEntry{Str, int}`），不是引用**：因为底层存储是 `uintptr_t key/val`，没有天然的 `std::pair<Str,int>&` 可引用；`key` 是对 arena 内存的一个 `{ptr,len}` 视图（沿用 `KeyAsStr` 的语义 sumatrapdf:42-45 ），生命周期跟随 `MapStrToInt` 本身（因为底层字符串是 arena-分配、`map` 存活期间不会被释放），所以在 `map` 存活期间使用是安全的，但不能把 `key` 存下来跨越 `map` 销毁后继续用。
+- **可以用同样的模式给 `MapStrToWStrToInt` 之类的其他 map 类型加迭代器**——如果代码库以后加了别的键类型的 map，重复上面模式即可，因为迭代逻辑本身跟 key 类型无关（都只是遍历 `HashTableEntry` 链表），只有 `operator*` 里解码 key 的方式需要换成对应的 `KeyAsWStr` 等。
+
+## 是否要做成模板化的通用迭代器
+
+如果以后要给多个 `MapXxxToYyy` 都加迭代器，会发现 `Iterator::operator++`/`FirstEntryFrom` 这套逻辑其实是通用的（只依赖 `HashTable`/`HashTableEntry` 布局），可以抽成一个内部共享的 `HashTableIteratorBase`，各个 `MapXxxToYyy::Iterator` 只需要重写 `operator*` 里"如何解码 key/val"这一部分。但鉴于 `Dict.cpp` 文件头本身就声明了"故意不用模板，避免 code bloat"的设计取向 sumatrapdf:10-11 ，建议先按每个具体 map 类型手写一份非模板的 `Iterator`（如上），除非确实要支持很多种 key/value 组合，再考虑做共享基类。
+### Citations
+**File:** src/base/Dict.cpp (L10-11)
+```cpp
+Usually those things are done as a templated hash table class,
+but I want to avoid code bloat and awful syntax.
+```
+**File:** src/base/Dict.cpp (L23-24)
+```cpp
+TODO:
+- add iterator for keys/values
+```
+**File:** src/base/Dict.cpp (L42-45)
+```cpp
+static Str KeyAsStr(uintptr_t key) {
+    // interned hash table keys are NUL-terminated
+    return Str((char*)key);
+}
+```
+**File:** src/base/Dict.cpp (L77-87)
+```cpp
+struct HashTable {
+    HashTableEntry** entries;
+    HashTableEntry* freeList;
+
+    int nEntries;
+    int nUsed; // total number of inserted entries
+
+    // for debugging
+    int nResizes;
+    int nCollisions;
+};
+```
+**File:** src/base/Dict.cpp (L106-130)
+```cpp
+static void HashTableResize(HashTable* h, HasherComparator* hc) {
+    int newSize = RoundToPowerOf2(h->nEntries + 1);
+    ReportIf(newSize <= h->nEntries);
+    HashTableEntry** newEntries = AllocArray<HashTableEntry*>(newSize);
+    HashTableEntry *e, *next;
+    size_t hash;
+    int pos;
+    for (int i = 0; i < h->nEntries; i++) {
+        e = h->entries[i];
+        while (e) {
+            next = e->next;
+            hash = hc->Hash(e->key);
+            pos = (int)(hash % (size_t)newSize);
+            e->next = newEntries[pos];
+            newEntries[pos] = e;
+            e = next;
+        }
+    }
+    free((void*)h->entries);
+    h->entries = newEntries;
+    h->nEntries = newSize;
+    h->nResizes += 1;
+
+    ReportIf(h->nUsed >= (h->nEntries * 3) / 2);
+}
+```
+**File:** src/base/Dict.cpp (L176-206)
+```cpp
+static bool RemoveEntry(HashTable* h, HasherComparator* hc, uintptr_t key, uintptr_t* removedValOut) {
+    size_t hash = hc->Hash(key);
+    int pos = (int)(hash % (size_t)h->nEntries);
+    HashTableEntry* e = h->entries[pos];
+    while (e) {
+        if (hc->Equal(key, e->key)) {
+            break;
+        }
+        e = e->next;
+    }
+    if (!e) {
+        return false;
+    }
+
+    // remove the the entry from the list
+    HashTableEntry* e2 = h->entries[pos];
+    if (e2 == e) {
+        h->entries[pos] = e->next;
+    } else {
+        while (e2->next != e) {
+            e2 = e2->next;
+        }
+        e2->next = e->next;
+    }
+    e->next = h->freeList;
+    h->freeList = e;
+    *removedValOut = e->val;
+    ReportIf(0 == h->nUsed);
+    h->nUsed -= 1;
+    return true;
+}
+```
+**File:** src/base/Dict.h (L6-6)
+```text
+struct HashTable;
+```

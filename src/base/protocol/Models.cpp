@@ -1,5 +1,6 @@
 #include "base/Base.h"
 #include "base/protocol/Models.h"
+#include <cstdio>
 #include "base/JsonParser.h"
 
 namespace LocalSend {
@@ -281,7 +282,7 @@ static void PrepareUploadInfoDeserializer(PrepareUploadResult* pt, json::Value& 
 
         // --- /info/<fieldName> ---
         // Str kSessionPrefix = StrL("/sessionId");
-        if (json::Type::String == v.type) {
+        if (v.type != json::Type::String) {
             return;
         }
         if (json::PathMatch(v.path, StrL("/sessionId"))) {
@@ -292,6 +293,7 @@ static void PrepareUploadInfoDeserializer(PrepareUploadResult* pt, json::Value& 
             // 释放旧值再复制，重复出现也不会泄漏
             str::ReplaceWithCopy(&pt->sessionId, v.value);
             logf("/sessionId: %s OK!\n", pt->sessionId);
+            // printf("/sessionId: %s OK!\n", pt->sessionId.s);
             return;
         }
 
@@ -307,12 +309,15 @@ static void PrepareUploadInfoDeserializer(PrepareUploadResult* pt, json::Value& 
             // 提取 IP 键（临时字符串）
             StrNode* seg1 = json::PathNth(v.path, 1);
             logf("/files:%s: OK!\n", seg1->s);
+            // printf("/files:%s: OK!\n", seg1->s.s);
             Str fileId = json::PathSegKey(seg1);
             logf("/files/%s: OK!\n", fileId);
+            // printf("/files/%s: OK!\n", fileId.s);
             // const char* fieldName = slash + 1;
 
             // 查找或创建 ServerConfig 条目
             int idx = pt->fileTokens.Find(fileId, 0);
+            // printf("Find fileToken: %s at (%d)\n", fileId.s, idx);
             if (idx < 0) {
                 Str st = str::Dup(v.value);
                 pt->fileTokens.Append(fileId, st);
@@ -323,6 +328,7 @@ static void PrepareUploadInfoDeserializer(PrepareUploadResult* pt, json::Value& 
             Str* st =pt->fileTokens.AtData(idx);
             str::ReplaceWithCopy(st, v.value);
             logf("Found fileId: %s, replace Value: %s\n", fileId, *st);
+            // printf("Found fileId: %s, replace Value: %s\n", fileId.s, (*st).s);
             // WriteFieldByName(&gServerConfigInfo, (u8*)sc, fieldName, value, type);
         }
 };

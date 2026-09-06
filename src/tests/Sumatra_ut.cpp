@@ -63,6 +63,7 @@ void FileUtilTest();
 void UpdateTempFileTests();
 void GuessFileTypeTest();
 void JsonTest();
+void TestIpInfo();
 void TestLocalSend();
 void RefHoverTest();
 void SettingsUtilTest();
@@ -501,6 +502,7 @@ int RunAppUnitTests(bool forAi) {
     UpdateTempFileTests();
     GuessFileTypeTest();
     JsonTest();
+    TestIpInfo();
     TestLocalSend();
     RefHoverTest();
     SettingsUtilTest();

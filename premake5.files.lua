@@ -582,6 +582,7 @@ function base_files()
     "Http.h",
     "Http.cpp",
     "JsonParser.*",
+    "JsonUtil.*",
     "LocalSend.*",
     "Log.h",
     "LzmaSimpleArchive.*",

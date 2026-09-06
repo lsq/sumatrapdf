@@ -1402,6 +1402,13 @@ struct HomeTransferListCtrl : VirtCtrl {
         return (HomeTransferRowCtrl*)ChildAt(idx + 1);
     }
 
+    // 行控件的 item 指向 fileStates；释放 UploadProgress 前必须清空，否则 tooltip/点击/绘制会访问野指针
+    void ClearRowItems() {
+        for (int i = 0; i < ChildCount() - 1; i++) {
+            EntryAt(i)->item = nullptr;
+        }
+    }
+
     void SetEntryCount(int n) {
         // ChildCount() 包含 closeBtn，行数 = ChildCount() - 1
         while (ChildCount() - 1 > n) {
@@ -1607,13 +1614,22 @@ static void HomeTransferCloseClicked(HomeTransferListCtrl* tl, VirtMouseEvent*) 
     if (!IsMainWindowValid(win)) {
         return;
     }
-    // tl->visibility = Visibility::Collapse;
-
-    // 标记取消：正在跑的模拟线程下一次 Sleep 醒来后检查到即退出，
-    // 不再 Post 任何进度更新（ApplyTransferProgressUpdate 里已有
-    // visibility != Visible 的兜底判断，这里是双保险，避免线程空跑）
-    delete win->uploadProgress;
+    // 传输进行中时工作线程还在读写 UploadProgress，不能在这里 delete：
+    // 进行中 -> 只标记取消；工作线程停下后 Send 调用 Cancel() 通知接收端，再由 OnUploadFinishedUI 释放
+    // 已完成 -> 后台线程不再访问，可以直接释放
+    UploadProgress* up = win->uploadProgress;
     win->uploadProgress = nullptr;
+    tl->ClearRowItems();
+    if (up) {
+        if (up->finished) {
+            delete up;
+        } else {
+            up->cancelled = true;
+        }
+    }
+    // 立即收起 transferList：DrawHomePageLayout 先画树、最后才 Sync，
+    // 不重新布局的话 transferList 仍是 Visible，PaintTree 还会去画行控件
+    HomePageRelayout(win);
     tl->entriesInited = false;
 
     // HomeChromeCtrl* chrome = EnsureHomeChrome(win);
@@ -1644,6 +1660,7 @@ static void OnUploadProgressUI(UploadProgressUIData* d) {
     AutoDelete del(d);
     MainWindow* win = d->win;
     if (!IsMainWindowValid(win)) return; // 窗口可能在异步过程中被关闭
+    if (d->progress->cancelled) return;   // 用户已点 ✕，不要再挂回窗口
     win->uploadProgress = d->progress;
     if (!win->IsCurrentTabAbout()) {
         return; // 已经离开首页，不用再画
@@ -1696,22 +1713,71 @@ static void OnUploadProgressUI(UploadProgressUIData* d) {
     }
 }
 
-void OnUploadProgress(UploadProgressUIData* ctx, UploadProgress* p) {
-    // 限流：每次回调都 Post（如需限流可加时间戳判断）
-    auto d = new UploadProgressUIData{ctx->win, p};
-    bool alreadyPending = InterlockedExchange(&gTransferRepaintPending, 1) != 0;
-    if (alreadyPending) return; // a repaint is already queued; it will pick up the latest progress
-    auto fn = MkFunc0(OnUploadProgressUI, d);
-    uitask::Post(fn, nullptr);
+void OnUploadProgress(MainWindow* win, UploadProgress* p) {
+    if (p->cancelled) return;
+    // 限流：已有一个刷新在排队时不再 Post，它会读到最新进度
+    if (InterlockedExchange(&gTransferRepaintPending, 1) != 0) return;
+    auto d = new UploadProgressUIData{win, p};
+    uitask::Post(MkFunc0(OnUploadProgressUI, d), "UploadProgress");
 }
 
+// 上传线程在所有工作线程结束后 Post 过来。uitask 按顺序执行，之前 Post 的
+// OnUploadProgressUI 都已处理完，所以这里是 progress 唯一的回收点；
+// 例外：已完成且仍在显示 -> 留给用户看结果，点 ✕ 或下次上传时再释放
 void OnUploadFinishedUI(UploadProgressUIData* d) {
     AutoDelete del(d);
-    if (!IsMainWindowValid(d->win)) return;
-    if (!d->win->uploadProgress) return;
-    delete (d->win->uploadProgress);
-    d->win->uploadProgress = nullptr;
-    d->win->RedrawAll(false);
+    UploadProgress* p = d->progress;
+    MainWindow* win = d->win;
+    if (IsMainWindowValid(win)) {
+        if (win->uploadInFlight == p) {
+            win->uploadInFlight = nullptr;
+        }
+        if (win->uploadProgress == p && !p->cancelled) {
+            p->finished = true;
+            win->RedrawAll(false);
+            return;
+        }
+        if (win->uploadProgress == p) {
+            win->uploadProgress = nullptr;
+        }
+    }
+    delete p;
+}
+
+void HomeTransferDiscardFinished(MainWindow* win) {
+    UploadProgress* up = win->uploadProgress;
+    if (!up || !up->finished) return;
+    win->uploadProgress = nullptr;
+    HomeChromeCtrl* chrome = HomeChrome(win);
+    if (chrome && chrome->transferList) {
+        chrome->transferList->ClearRowItems();
+    }
+    delete up;
+    HomePageRelayout(win);
+    win->RedrawAll(false);
+}
+
+// 窗口销毁时调用（~MainWindow，在 HomePageDestroyChrome 之前）
+// 已完成 -> 直接释放；仍在上传 -> 标记取消，worker 停下后 OnUploadFinishedUI
+// 发现窗口已无效，会自己 delete
+void HomeTransferFreeOnWindowDestroy(MainWindow* win) {
+    UploadProgress* up = win->uploadProgress;
+    win->uploadProgress = nullptr;
+    HomeChromeCtrl* chrome = HomeChrome(win);
+    if (chrome && chrome->transferList) {
+        chrome->transferList->ClearRowItems();
+    }
+    if (up) {
+        if (up->finished) {
+            delete up;
+        } else {
+            up->cancelled = true;
+        }
+    }
+    if (win->uploadInFlight) {
+        win->uploadInFlight->cancelled = true;
+        win->uploadInFlight = nullptr;
+    }
 }
 
 bool HomeTransferOnMouseWheel(MainWindow* win, int delta) {

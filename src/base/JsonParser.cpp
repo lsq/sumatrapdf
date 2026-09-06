@@ -398,12 +398,14 @@ StrNode* PathBuildTemp(Str a, Str b, Str c, Str d, Str e, Str f) {
 }
 
 // Legacy string form for tests/logging: /key[0]/name
-TempStr PathFormatTemp(StrNode* path) {
+TempStr PathFormatTemp(StrNode* path, bool gLog = false) {
     str::Builder b;
-    for (StrNode* p = path; p; p = p->next) {
+    int i = 0;
+    for (StrNode* p = path; p; p = p->next, i++) {
         if (len(p->s) == 0) {
             continue;
         }
+        if (gLog) printf("%sStrNode path.s[%d]: %s\n", i > 0 ? "" : "-----------------\n", i, p->s.s);
         char kind = p->s.s[0];
         Str body = Str(p->s.s + 1, p->s.len - 1);
         if (kind == kSegKey) {
@@ -416,6 +418,10 @@ TempStr PathFormatTemp(StrNode* path) {
         }
     }
     return ToStrTemp(b);
+}
+
+TempStr PathFormatTemp(StrNode* path) {
+    return PathFormatTemp(path, false);
 }
 
 StrNode* PathNth(StrNode* path, int n) {
