@@ -1,3 +1,4 @@
+#include <cmath>
 #include "base/Base.h"
 #include "base/File.h"
 #include "base/client/UploadSession.h"
@@ -7,6 +8,7 @@
 #include "base/protocol/Fingerprint.h"
 #include "base/protocol/Models.h"
 #include "base/net/HttpClient.h"
+#include "base/TempRenameGuard.h"
 #include "base/Win.h"
 
 using namespace LocalSend;
@@ -74,6 +76,9 @@ bool RenameFiles(const StrVec& src, const StrVec& dst, bool forward) {
     const StrVec& from = forward ? src : dst;
     const StrVec& to = forward ? dst : src;
 
+    TempStr forwardChar = forward ? StrL("⇒") : StrL("⇐");
+    logf("[TempRenameGuard::RenameFiles%s]\n", forward ? StrL("") : StrL("(Reverse)"));
+
     if (len(from) != len(to)) return false;
 
     for (int i = 0; i < len(from); i++) {
@@ -82,69 +87,55 @@ bool RenameFiles(const StrVec& src, const StrVec& dst, bool forward) {
             // 将已经成功重命名的文件还原回去
             for (int j = i - 1; j >= 0; j--) {
                 file::Rename(from.At(j), to.At(j)); // 尽力还原，忽略错误
+                logf("[TempRenameGuard::RenameFiles(Error-Reverse)] %s ⇒  %s\n", from.At(i), to.At(i));
             }
             return false;
         }
+        logf("[%s] %s ⇔  %s\n", forwardChar, from.At(i), to.At(i));
     }
     return true;
 }
 
-struct TempRenameGuard {
-    StrVec origAbsPaths; // 原始绝对路径（用于 rename 和还原）
-    StrVec pdfAbsPaths;  // 带 .pdf 后缀的绝对路径（用于实际文件操作）
-    StrVec origRelPaths; // 基于 basePath 转换的相对路径（供外部业务使用）
-    bool renamed = false;
+TempRenameGuard::TempRenameGuard(const StrVec& fileList, Str basePath) {
+    for (int i = 0; i < len(fileList); i++) {
+        Str absPath = fileList.At(i);
+        origAbsPaths.Append(absPath);
 
-    // fileList: 绝对路径列表
-    // basePath: 计算相对路径的基准目录（必须为绝对路径）
-    explicit TempRenameGuard(const StrVec& fileList, Str basePath) {
-        for (int i = 0; i < len(fileList); i++) {
-            Str absPath = fileList.At(i);
+        TempStr pdfPath = fmt("%s.pdf", absPath);
+        pdfAbsPaths.Append(pdfPath);
 
-            // 1. 保存原始绝对路径
-            origAbsPaths.Append(absPath);
+        TempStr relPath = GetRelativeTemp(basePath, absPath);
+        origRelPaths.Append(relPath);
+    }
+}
 
-            // 2. 生成带 .pdf 后缀的绝对路径
-            TempStr pdfPath = fmt("%s.pdf", absPath);
-            pdfAbsPaths.Append(pdfPath);
-            // free(pdfPath);
+bool TempRenameGuard::Enter() {
+    if (len(origAbsPaths) != len(pdfAbsPaths)) return false;
 
-            // 3. 计算并保存相对路径
-            TempStr relPath = GetRelativeTemp(basePath, absPath);
-            origRelPaths.Append(relPath);
+    for (int i = 0; i < len(pdfAbsPaths); i++) {
+        if (file::Exists(pdfAbsPaths.At(i))) {
+            logf("TempRenameGuard: target already exists: %s", pdfAbsPaths.At(i));
+            return false;
         }
     }
 
-    bool Enter() {
-        if (len(origAbsPaths) != len(pdfAbsPaths)) return false;
+    renamed = RenameFiles(origAbsPaths, pdfAbsPaths, true);
+    return renamed;
+}
 
-        // 预检查：防止覆盖已存在的 .pdf 文件
-        for (int i = 0; i < len(pdfAbsPaths); i++) {
-            if (file::Exists(pdfAbsPaths.At(i))) {
-                logf("TempRenameGuard: target already exists: %s", pdfAbsPaths.At(i));
-                return false;
-            }
-        }
-
-        renamed = RenameFiles(origAbsPaths, pdfAbsPaths, true);
-        return renamed;
+TempRenameGuard::~TempRenameGuard() {
+    if (renamed) {
+        RenameFiles(origAbsPaths, pdfAbsPaths, false);
     }
+}
 
-    ~TempRenameGuard() {
-        if (renamed) {
-            RenameFiles(origAbsPaths, pdfAbsPaths, false);
-        }
-    }
+const StrVec& TempRenameGuard::GetRelativePaths() const {
+    return origRelPaths;
+}
 
-    // 获取相对路径列表（供后续业务逻辑使用）
-    const StrVec& GetRelativePaths() const { return origRelPaths; }
-
-    // 获取当前生效的 pdf 绝对路径列表（供文件读取使用）
-    const StrVec& GetPdfAbsPaths() const { return pdfAbsPaths; }
-
-    TempRenameGuard(const TempRenameGuard&) = delete;
-    TempRenameGuard& operator=(const TempRenameGuard&) = delete;
-};
+const StrVec& TempRenameGuard::GetPdfAbsPaths() const {
+    return pdfAbsPaths;
+}
 
 int LocalSender(Str host, StrVec& p, UploadProgress* progress) {
     int port = kDefaultPort;

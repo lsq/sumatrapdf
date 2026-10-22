@@ -1464,6 +1464,7 @@ const globalPrefs: Field[] = [
   ),
   field("RemoteIp", Str, "localhost", "socket ip address"),
   field("LocalSend", Bool, true, "if true, we use localsend client to send files"),
+  field("UseSendMe", Bool, true, "if true, we use SendMe(iroh) client to send files"),
   field(
     "RememberStatePerDocument",
     Bool,

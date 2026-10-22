@@ -152,6 +152,7 @@
 #include "SumatraCrashCommon.h"
 #include "OpenFileFilters.h"
 #include "SumatraLog.h"
+#include "DashBeamSend.h"
 
 using Gdiplus::Graphics;
 using Gdiplus::Pen;
@@ -6608,6 +6609,8 @@ static void UploadFiles(MainWindow* win) {
 
     StrVec files;
     ExpandAllWithOutFirst(win->homePageSelectedFiles, files);
+    StrVec uFiles;
+    SliceFirst(files, uFiles);
 
     // 从配置读取服务器地址（gGlobalPrefs->remoteIp）
     Str remoteIp = gSettings->remoteIp;
@@ -6619,26 +6622,32 @@ static void UploadFiles(MainWindow* win) {
     // 清掉上一次已完成、仍在显示的传输列表
     HomeTransferDiscardFinished(win);
 
-    // progress 由这里分配；任务结束后由 OnUploadFinishedUI 接管
-    auto* progress = new UploadProgress();
-    progress->cbProgress = MkFunc1(OnUploadProgress, win);
-    win->uploadInFlight = progress;
-
-    auto* d = new UploadTaskData();
-    d->win = win;
-    d->serverA = str::Dup(remoteIp).s;
-    d->port = 8880; // 或从配置读取
-    d->progress = progress;
-    if (gSettings->localSend) {
-        d->filePaths = files; // StrVec 复制
-        d->urlA = nullptr;
-        RunAsync(MkFunc0(LocalSendTask, d), StrL("UploadFilesThread"));
+    if (gSettings->useSendMe) {
+        HWND hw = win ? win->hwndFrame : nullptr;
+        if (!DashbeamEnsureLoaded(hw)) {
+            return; // 已弹 MessageBox，不走发送流程
+        }
+        ShowDownloadProgressDialog(win, uFiles);
     } else {
-        StrVec uFiles;
-        SliceFirst(files, uFiles);
-        d->filePaths = uFiles; // StrVec 复制
-        d->urlA = str::Dup(StrL("/upload")).s;
-        RunAsync(MkFunc0(UploadTask, d), StrL("UploadFilesThread"));
+        // progress 由这里分配；任务结束后由 OnUploadFinishedUI 接管
+        auto* progress = new UploadProgress();
+        progress->cbProgress = MkFunc1(OnUploadProgress, win);
+        win->uploadInFlight = progress;
+
+        auto* d = new UploadTaskData();
+        d->win = win;
+        d->serverA = str::Dup(remoteIp).s;
+        d->port = 8880; // 或从配置读取
+        d->progress = progress;
+        if (gSettings->localSend) {
+            d->urlA = nullptr;
+            d->filePaths = files; // StrVec 复制
+            RunAsync(MkFunc0(LocalSendTask, d), StrL("UploadFilesThread"));
+        } else {
+            d->filePaths = uFiles; // StrVec 复制
+            d->urlA = str::Dup(StrL("/upload")).s;
+            RunAsync(MkFunc0(UploadTask, d), StrL("UploadFilesThread"));
+        }
     }
 }
 

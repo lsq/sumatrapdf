@@ -285,6 +285,8 @@ function sumatrapdf_files()
     "ChangeColorDialogCommon.*",
     "ChangeLanguageDialog.*",
     "ChangeScrollbarDialog.*",
+    "DownloadProgressDialog.cpp",
+    "DashBeamSend.*",
     "ChangeThemeDialog.*",
     "CustomZoomDialog.*",
     "PageGridDialog.*",

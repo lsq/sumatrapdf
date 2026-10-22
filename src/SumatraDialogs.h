@@ -19,6 +19,9 @@ TempStr AdvSettingsRowsResultTemp(Str action, int arg, int* exitCodeOut);
 void ShowChangeBackgroundColorDialog(MainWindow* win);
 void ShowChangeLanguageDialog(MainWindow* win);
 void ShowChangeScrollbarDialog(MainWindow* win);
+void ShowDownloadProgressDialog(MainWindow* win, StrVec& paths);
+void CloseDownloadProgressDialog();
+bool IsDownloadProgressDialogVisible();
 void ShowChangeThemeDialog(MainWindow* win);
 void ShowSetDocumentColorsFollowThemeDialog(MainWindow* win);
 
